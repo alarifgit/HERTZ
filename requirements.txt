@@ -1,0 +1,9 @@
+disnake[voice]
+aiohttp
+pydantic
+python-dotenv
+yt-dlp
+spotipy
+httpx
+sqlalchemy
+aiosqlite
