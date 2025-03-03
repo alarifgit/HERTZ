@@ -307,3 +307,11 @@ async def cleanup_expired_key_value_cache() -> int:
         )
         await session.commit()
         return result.rowcount
+
+async def get_recent_file_caches(limit: int = 5) -> List[FileCache]:
+    """Get the most recently accessed file cache entries"""
+    async with (await get_session()) as session:
+        result = await session.execute(
+            select(FileCache).order_by(FileCache.accessedAt.desc()).limit(limit)
+        )
+        return list(result.scalars().all())

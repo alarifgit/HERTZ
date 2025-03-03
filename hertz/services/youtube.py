@@ -174,7 +174,7 @@ async def get_youtube_playlist(
     api_key: str
 ) -> List[Dict[str, Any]]:
     """
-    Get metadata for a YouTube playlist
+    Get metadata for a YouTube playlist with batched processing
     
     Args:
         playlist_id: YouTube playlist ID
@@ -192,7 +192,7 @@ async def get_youtube_playlist(
         return json.loads(cached)
     
     try:
-        # Get playlist details
+        # Get playlist details first
         async with aiohttp.ClientSession() as session:
             params = {
                 'part': 'snippet',
@@ -217,14 +217,14 @@ async def get_youtube_playlist(
             playlist = playlist_data['items'][0]
             playlist_title = playlist['snippet']['title']
             
-            # Get playlist items
-            all_items = []
+            # Get playlist items with pagination
+            all_video_ids = []
             next_page_token = None
             
             while True:
                 params = {
                     'part': 'snippet,contentDetails',
-                    'maxResults': 50,
+                    'maxResults': 50,  # Max allowed by API
                     'playlistId': playlist_id,
                     'key': api_key
                 }
@@ -232,6 +232,7 @@ async def get_youtube_playlist(
                 if next_page_token:
                     params['pageToken'] = next_page_token
                 
+                # Get items for this page
                 async with session.get(
                     'https://www.googleapis.com/youtube/v3/playlistItems',
                     params=params
@@ -243,25 +244,16 @@ async def get_youtube_playlist(
                     
                     items_data = await response.json()
                 
-                all_items.extend(items_data.get('items', []))
+                # Extract video IDs from this page
+                for item in items_data.get('items', []):
+                    video_id = item.get('contentDetails', {}).get('videoId')
+                    if video_id:
+                        all_video_ids.append(video_id)
                 
+                # Check if there are more pages
                 next_page_token = items_data.get('nextPageToken')
                 if not next_page_token:
                     break
-            
-            # Get video details for all items
-            video_ids = [
-                item['contentDetails']['videoId'] 
-                for item in all_items
-            ]
-            
-            videos = []
-            
-            # Process in batches of 50 (YouTube API limit)
-            for i in range(0, len(video_ids), 50):
-                batch = video_ids[i:i+50]
-                batch_videos = await get_videos_details(batch, api_key)
-                videos.extend(batch_videos)
             
             # Create playlist object
             playlist_obj = {
@@ -269,25 +261,30 @@ async def get_youtube_playlist(
                 'source': playlist_id
             }
             
-            # Format results
+            # Process videos in batches of 50 (YouTube API limit)
             results = []
             
-            for video in videos:
-                if video:
-                    # Process chapters if needed
-                    if should_split_chapters:
-                        chapters = await process_video_chapters(
-                            video, 
-                            api_key, 
-                            playlist_obj
-                        )
-                        if chapters:
-                            results.extend(chapters)
-                            continue
-                    
-                    # Add as single video
-                    metadata = format_video_metadata(video, playlist_obj)
-                    results.append(metadata)
+            # Process in batches to avoid API quota issues
+            for i in range(0, len(all_video_ids), 50):
+                batch = all_video_ids[i:i+50]
+                batch_videos = await get_videos_details(batch, api_key)
+                
+                for video in batch_videos:
+                    if video:
+                        # Process chapters if needed
+                        if should_split_chapters:
+                            chapters = await process_video_chapters(
+                                video, 
+                                api_key, 
+                                playlist_obj
+                            )
+                            if chapters:
+                                results.extend(chapters)
+                                continue
+                        
+                        # Add as single video
+                        metadata = format_video_metadata(video, playlist_obj)
+                        results.append(metadata)
             
             # Cache the result
             await key_value_cache.set(
@@ -603,3 +600,23 @@ async def get_youtube_suggestions(query: str) -> List[str]:
     except Exception as e:
         logger.error(f"Error getting YouTube suggestions: {e}")
         return []
+
+async def test_youtube_api(api_key: str):
+    """Test connection to YouTube API"""
+    async with aiohttp.ClientSession() as session:
+        params = {
+            'part': 'snippet',
+            'q': 'test',
+            'maxResults': 1,
+            'key': api_key
+        }
+        
+        async with session.get(
+            'https://www.googleapis.com/youtube/v3/search',
+            params=params
+        ) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ValueError(f"YouTube API test failed: {response.status} - {text}")
+            
+            return True

@@ -15,6 +15,13 @@ logging.basicConfig(
     ]
 )
 
+# Reduce noise from disnake's internal logging
+logging.getLogger('disnake').setLevel(logging.WARNING)
+logging.getLogger('disnake.gateway').setLevel(logging.WARNING)
+logging.getLogger('disnake.client').setLevel(logging.WARNING)
+# Keep voice client logs at INFO since they're useful for playback debugging
+logging.getLogger('disnake.voice_client').setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 # Create data directories if they don't exist
@@ -23,8 +30,8 @@ os.makedirs('/data/cache', exist_ok=True)
 os.makedirs('/data/cache/tmp', exist_ok=True)
 
 try:
-    from hertz.bot import HertzBot
-    from hertz.config import load_config
+    from .bot import HertzBot
+    from .config import Config
     
     def main():
         logger.info("Starting HERTZ Discord bot...")

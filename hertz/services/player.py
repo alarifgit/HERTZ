@@ -202,7 +202,7 @@ class Player:
         self._register_voice_activity_listeners(channel)
     
     async def disconnect(self) -> None:
-        """Disconnect from voice channel"""
+        """Disconnect from voice channel but preserve position for resuming"""
         self._stop_position_tracking()
         
         if self.disconnect_timer:
@@ -210,10 +210,9 @@ class Player:
             self.disconnect_timer = None
             
         if self.voice_client:
+            # Remember we're disconnecting but not resetting position
             if self.status == Status.PLAYING:
-                await self.pause()
-                
-            self.loop_current_song = False
+                self.status = Status.PAUSED
             
             try:
                 await self.voice_client.disconnect(force=True)
@@ -222,86 +221,122 @@ class Player:
                 
             self.voice_client = None
             
-        self.status = Status.IDLE
+        # Keep the status as PAUSED not IDLE to indicate we have a song ready to resume
         self._notify_playback_event("disconnect")
     
     async def play(self) -> None:
-        """Start or resume playback"""
+        """Start or resume playback with proper position restoration"""
         if not self.voice_client:
             raise ValueError("Not connected to a voice channel")
-            
+                
         current_song = self.get_current()
         if not current_song:
             raise ValueError("Queue is empty")
-            
+                
         # Cancel any pending disconnect
         if self.disconnect_timer:
             self.disconnect_timer.cancel()
             self.disconnect_timer = None
-            
+                
         # Resume from pause
         if (self.status == Status.PAUSED and 
-            current_song.url == self.last_song_url and 
-            self.voice_client.is_paused()):
-            self.voice_client.resume()
-            self.status = Status.PLAYING
-            self._start_position_tracking()
-            self._notify_playback_event("resume", song=current_song)
-            return
+            current_song.url == self.last_song_url):
             
+            # Get the current tracked position
+            current_position = self.position_in_seconds
+            logger.info(f"Resuming playback for {current_song.title} from position {current_position}s")
+            
+            # For direct resumption without seeking
+            if self.voice_client.is_paused():
+                self.voice_client.resume()
+                self.status = Status.PLAYING
+                self._start_position_tracking()
+                self._notify_playback_event("resume", song=current_song)
+                return
+            
+            # If we can't directly resume (e.g., after reconnecting),
+            # seek to the current position instead
+            if current_position > 0:
+                logger.info(f"Seeking to position {current_position}s after reconnection")
+                # Keep the status as PAUSED to prevent position reset in seek
+                temp_status = self.status
+                await self.seek(current_position)
+                self.status = Status.PLAYING
+                return
+                
         try:
             # Get offset and duration limits
             offset_seconds = None
             duration = None
-            
+                
             if current_song.offset > 0:
                 offset_seconds = current_song.offset
-                
+                    
             if not current_song.is_live:
                 duration = current_song.length + current_song.offset
             
+            logger.info(f"Starting playback for {current_song.title}")
+                
             # Get audio source
             source = await self._get_audio_source(
                 current_song, 
                 seek_position=offset_seconds, 
                 duration=duration
             )
-            
-            # Set up after callback
+                
+            # Set up after callback with extra error handling
             def after_playing(error):
                 if error:
-                    logger.error(f"Error in playback: {error}")
-    
-                # Queue the coroutine in the main event loop using the stored reference
-                self.main_loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(self._handle_song_finished())
-                )
+                    logger.error(f"Error in playback callback: {error}")
+                    # Try to log more detailed information
+                    import traceback
+                    logger.error(traceback.format_exc())
+        
+                # Try-except block to handle callback errors
+                try:
+                    # Queue the coroutine in the main event loop using the stored reference
+                    self.main_loop.call_soon_threadsafe(
+                        lambda: asyncio.create_task(self._handle_song_finished())
+                    )
+                except Exception as e:
+                    logger.error(f"Error in after_playing callback: {e}")
 
-            # Play the audio
-            self.voice_client.play(source, after=after_playing)
-            
-            # Stop any current playback
+            # Make sure any existing playback is stopped properly
             if self.voice_client.is_playing() or self.voice_client.is_paused():
+                logger.info(f"Stopping existing playback before starting new song")
                 self.voice_client.stop()
-            
-            # Play the audio
-            self.voice_client.play(source, after=after_playing)
-            self.status = Status.PLAYING
-            self.last_song_url = current_song.url
-            
-            # Initialize or reset position tracking
-            if current_song.url == self.last_song_url:
-                self._start_position_tracking()
-            else:
-                self._start_position_tracking(0)
+                # Small delay to ensure cleanup is complete
+                await asyncio.sleep(0.2)
                 
-            # Notify listeners
-            self._notify_playback_event("play", song=current_song)
-            
+            # Play the audio
+            try:
+                self.voice_client.play(source, after=after_playing)
+                logger.info(f"Playback started for {current_song.title}")
+                self.status = Status.PLAYING
+                self.last_song_url = current_song.url
+                    
+                # Initialize or reset position tracking
+                if current_song.url == self.last_song_url:
+                    # Maintain position tracking if it's the same song
+                    self._start_position_tracking()
+                else:
+                    # Reset position for a new song
+                    self._start_position_tracking(0)
+                        
+                # Notify listeners
+                self._notify_playback_event("play", song=current_song)
+            except Exception as e:
+                logger.error(f"Critical error in voice_client.play: {e}")
+                # Detailed error information
+                import traceback
+                logger.error(traceback.format_exc())
+                raise ValueError(f"Failed to start playback: {e}")
+                    
         except Exception as e:
-            logger.error(f"Error playing track: {str(e)}")
+            logger.error(f"Error playing track: {e}")
+            # Try to recover by skipping to next song
             await self.forward(1)
-            raise
+            raise ValueError(f"Error playing track: {str(e)}")
     
     async def pause(self) -> None:
         """Pause playback"""
@@ -332,6 +367,9 @@ class Player:
             
         real_position = position_seconds + current_song.offset
         
+        # Store current status to restore after seek
+        previous_status = self.status
+        
         # Stop current playback
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             self.voice_client.stop()
@@ -354,7 +392,11 @@ class Player:
         
         # Play from new position
         self.voice_client.play(source, after=after_playing)
-        self.status = Status.PLAYING
+        
+        # Restore previous status (either PLAYING or PAUSED)
+        self.status = previous_status
+        
+        # Start position tracking
         self._start_position_tracking(position_seconds)
         self._notify_playback_event("seek", song=current_song, position=position_seconds)
     
@@ -366,6 +408,13 @@ class Player:
         """Skip forward in the queue"""
         self._stop_position_tracking()
         
+        # Save current loop settings
+        was_looping_song = self.loop_current_song
+        was_looping_queue = self.loop_current_queue
+        
+        # Temporarily disable looping to prevent auto-replay
+        self.loop_current_song = False 
+        
         if self.queue_position + skip < len(self.queue):
             old_position = self.queue_position
             self.queue_position += skip
@@ -375,6 +424,9 @@ class Player:
             self._notify_playback_event("skip", 
                                        old_position=old_position, 
                                        new_position=self.queue_position)
+            
+            # Restore loop queue setting, but not loop song setting (since we skipped)
+            self.loop_current_queue = was_looping_queue
             
             if self.status != Status.PAUSED:
                 await self.play()
@@ -432,6 +484,7 @@ class Player:
         await self.disconnect()
         self.queue = []
         self.queue_position = 0
+        self.status = Status.IDLE  # Make sure we set to IDLE for full stop
         self._notify_playback_event("stop")
     
     # Private helper methods
@@ -441,7 +494,7 @@ class Player:
         seek_position: Optional[int] = None,
         duration: Optional[int] = None
     ) -> disnake.PCMVolumeTransformer:
-        """Get an audio source for the given song"""
+        """Get an audio source for the given song with improved error handling"""
         import yt_dlp
         
         # Generate cache key
@@ -460,68 +513,100 @@ class Player:
         
         if duration is not None:
             before_options.append(f'-to {duration}')
-            
+                
         if before_options:
             ffmpeg_options['before_options'] = ' '.join(before_options)
         
         # Use cached file if available
         if cache_path:
-            source = disnake.FFmpegPCMAudio(cache_path, **ffmpeg_options)
-            
-            # Apply volume transformer
-            volume_transformer = disnake.PCMVolumeTransformer(
-                source, 
-                volume=self.get_volume() / 100.0
-            )
-            return volume_transformer
+            logger.info(f"Using cached file for {song.title}")
+            try:
+                source = disnake.FFmpegPCMAudio(cache_path, **ffmpeg_options)
+                
+                # Apply volume transformer
+                volume_transformer = disnake.PCMVolumeTransformer(
+                    source, 
+                    volume=self.get_volume() / 100.0
+                )
+                return volume_transformer
+            except Exception as e:
+                logger.error(f"Error using cached file: {e}")
+                # Fall through to re-download if cache file is invalid
         
         # Handle different sources
-        if song.source == MediaSource.HLS:
-            # Direct stream for HLS
-            source = disnake.FFmpegPCMAudio(song.url, **ffmpeg_options)
-        else:
-            # YouTube source
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'quiet': True,
-                'no_warnings': True,
-                'noplaylist': True,
-                'ignoreerrors': True,
-            }
-            
-            loop = asyncio.get_event_loop()
-            
-            # Extract media info
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = await loop.run_in_executor(
-                    None, 
-                    lambda: ydl.extract_info(
-                        f"https://www.youtube.com/watch?v={song.url}", 
-                        download=False
+        try:
+            if song.source == MediaSource.HLS:
+                # Direct stream for HLS
+                logger.info(f"Setting up HLS stream for {song.title}")
+                source = disnake.FFmpegPCMAudio(song.url, **ffmpeg_options)
+            else:
+                # YouTube source
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'quiet': True,
+                    'no_warnings': True,
+                    'noplaylist': True,
+                    'ignoreerrors': True,
+                }
+                
+                loop = asyncio.get_event_loop()
+                
+                # Extract media info
+                logger.info(f"Extracting info for {song.url}")
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = await loop.run_in_executor(
+                        None, 
+                        lambda: ydl.extract_info(
+                            f"https://www.youtube.com/watch?v={song.url}", 
+                            download=False
+                        )
                     )
-                )
-                
-                if not info:
-                    raise ValueError(f"Could not extract info for {song.url}")
-                
-                url = info.get('url')
-                
-                if not url:
-                    raise ValueError(f"Could not get stream URL for {song.url}")
-                
-                # Try to cache if it's not a livestream and not too long and not seeking
-                should_cache = (
-                    not info.get('is_live', False) and 
-                    info.get('duration', 0) < 30 * 60 and
-                    seek_position is None
-                )
-                
-                source = disnake.FFmpegPCMAudio(url, **ffmpeg_options)
-                
-                if should_cache:
-                    # We schedule caching asynchronously to not block playback
-                    asyncio.create_task(self._cache_song(song, url, cache_key))
-        
+                    
+                    if not info:
+                        raise ValueError(f"Could not extract info for {song.url}")
+                    
+                    url = info.get('url')
+                    
+                    if not url:
+                        raise ValueError(f"Could not get stream URL for {song.url}")
+                    
+                    # Apply volume normalization if loudness data is available
+                    volume_adjustment = ""
+                    if 'loudnessDb' in info:
+                        # Normalize based on YouTube's loudness data
+                        loudness_db = -float(info['loudnessDb'])
+                        volume_adjustment = f",volume={loudness_db}dB"
+                        logger.info(f"Applying volume normalization of {loudness_db}dB for {song.title}")
+                    
+                    # Add volume adjustment to ffmpeg options if needed
+                    if volume_adjustment:
+                        if 'options' in ffmpeg_options:
+                            ffmpeg_options['options'] += f" -af {volume_adjustment}"
+                        else:
+                            ffmpeg_options['options'] = f"-vn -af {volume_adjustment}"
+                    
+                    # Try to cache if it's not a livestream and not too long and not seeking
+                    should_cache = (
+                        not info.get('is_live', False) and 
+                        info.get('duration', 0) < 30 * 60 and
+                        seek_position is None
+                    )
+                    
+                    logger.info(f"Creating audio source for {song.title}")
+                    source = disnake.FFmpegPCMAudio(url, **ffmpeg_options)
+                    
+                    if should_cache:
+                        # We schedule caching asynchronously to not block playback
+                        # Don't try to cache immediately to avoid race conditions
+                        def start_cache_task():
+                            asyncio.create_task(self._cache_song(song, url, cache_key))
+                        
+                        # Delay the cache task slightly to avoid interfering with playback start
+                        self.main_loop.call_later(2, start_cache_task)
+        except Exception as e:
+            logger.error(f"Error in _get_audio_source: {e}")
+            raise
+            
         # Apply volume transformer
         volume_transformer = disnake.PCMVolumeTransformer(
             source, 
@@ -568,8 +653,11 @@ class Player:
             
             # Move temporary file to final location
             if os.path.exists(tmp_path):
+                # Get file size for database
+                file_size = os.path.getsize(tmp_path)
+                
+                # Move to final location
                 shutil.move(tmp_path, final_path)
-                file_size = os.path.getsize(final_path)
                 
                 # Register in database
                 await self.file_cache.cache_file(cache_key, final_path)

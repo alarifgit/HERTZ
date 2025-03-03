@@ -28,4 +28,19 @@ class PlayerManager:
         """Remove a Player instance for a guild"""
         if guild_id in self.players:
             logger.debug(f"Removing player for guild {guild_id}")
+            
+            # Ensure disconnection
+            player = self.players[guild_id]
+            if player.voice_client and player.voice_client.is_connected():
+                async def disconnect():
+                    try:
+                        await player.disconnect()
+                    except Exception as e:
+                        logger.error(f"Error disconnecting during player removal: {e}")
+                
+                # Schedule disconnect - can't await here directly
+                import asyncio
+                asyncio.create_task(disconnect())
+            
+            # Remove from dictionary
             del self.players[guild_id]

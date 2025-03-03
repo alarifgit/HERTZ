@@ -24,7 +24,7 @@ ONE_MINUTE_IN_SECONDS = 60
 key_value_cache = KeyValueCache()
 
 class SpotifyClient:
-    """Simple Spotify API client"""
+    """Simple Spotify API client with robust token refresh"""
     
     API_BASE = "https://api.spotify.com/v1"
     TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -36,90 +36,114 @@ class SpotifyClient:
         self.token_expires = 0
     
     async def get_token(self) -> str:
-        """Get or refresh Spotify access token"""
-        # Check if token is still valid
+        """Get or refresh Spotify access token with retry logic"""
+        # Check if token is still valid (with 60s buffer)
         if self.access_token and time.time() < self.token_expires - 60:
             return self.access_token
         
-        # Get new token
-        auth_string = f"{self.client_id}:{self.client_secret}"
-        auth_bytes = auth_string.encode("ascii")
-        auth_base64 = base64.b64encode(auth_bytes).decode("ascii")
+        # Try to get new token with retries
+        max_retries = 3
+        retry_count = 0
+        last_error = None
         
-        headers = {
-            "Authorization": f"Basic {auth_base64}",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
+        while retry_count < max_retries:
+            try:
+                auth_string = f"{self.client_id}:{self.client_secret}"
+                auth_bytes = auth_string.encode("ascii")
+                auth_base64 = base64.b64encode(auth_bytes).decode("ascii")
+                
+                headers = {
+                    "Authorization": f"Basic {auth_base64}",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+                
+                data = {"grant_type": "client_credentials"}
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        self.TOKEN_URL,
+                        headers=headers,
+                        data=data,
+                        timeout=10  # Add timeout
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            logger.error(f"Spotify token error: {error_text}")
+                            raise ValueError(f"Spotify API error: {response.status}")
+                        
+                        token_data = await response.json()
+                        
+                        self.access_token = token_data["access_token"]
+                        self.token_expires = time.time() + token_data["expires_in"]
+                        
+                        # Successfully got token, exit retry loop
+                        return self.access_token
+                        
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                logger.warning(f"Spotify token retry {retry_count}/{max_retries}: {e}")
+                await asyncio.sleep(2 ** retry_count)  # Exponential backoff
         
-        data = {"grant_type": "client_credentials"}
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.TOKEN_URL,
-                    headers=headers,
-                    data=data
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Spotify token error: {error_text}")
-                        raise ValueError("Failed to get Spotify access token")
-                    
-                    token_data = await response.json()
-                    
-                    self.access_token = token_data["access_token"]
-                    self.token_expires = time.time() + token_data["expires_in"]
-                    
-                    return self.access_token
-        except Exception as e:
-            logger.error(f"Error getting Spotify token: {str(e)}")
-            raise
+        # All retries failed
+        logger.error(f"Failed to get Spotify token after {max_retries} retries: {last_error}")
+        raise ValueError(f"Failed to get Spotify access token: {last_error}")
     
     async def make_request(
         self, 
         endpoint: str, 
         params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Make an authenticated request to the Spotify API"""
-        token = await self.get_token()
+        """Make an authenticated request to the Spotify API with retries"""
+        max_retries = 3
+        retry_count = 0
+        last_error = None
         
-        headers = {"Authorization": f"Bearer {token}"}
-        url = f"{self.API_BASE}/{endpoint}"
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url,
-                    headers=headers,
-                    params=params
-                ) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Spotify API error: {error_text}")
-                        
-                        # If token expired, retry once
-                        if response.status == 401:
-                            self.access_token = None
-                            token = await self.get_token()
-                            headers = {"Authorization": f"Bearer {token}"}
+        while retry_count < max_retries:
+            try:
+                token = await self.get_token()
+                
+                headers = {"Authorization": f"Bearer {token}"}
+                url = f"{self.API_BASE}/{endpoint}"
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        url,
+                        headers=headers,
+                        params=params,
+                        timeout=10  # Add timeout
+                    ) as response:
+                        if response.status == 429:  # Rate limit
+                            # Get retry-after header
+                            retry_after = int(response.headers.get('Retry-After', '5'))
+                            logger.warning(f"Spotify rate limit hit. Waiting {retry_after}s")
+                            await asyncio.sleep(retry_after)
+                            retry_count += 1
+                            continue
                             
-                            async with session.get(
-                                url,
-                                headers=headers,
-                                params=params
-                            ) as retry_response:
-                                if retry_response.status != 200:
-                                    raise ValueError(f"Spotify API error: {retry_response.status}")
-                                
-                                return await retry_response.json()
+                        if response.status != 200:
+                            error_text = await response.text()
+                            logger.error(f"Spotify API error: {error_text}")
+                            
+                            # If token expired, retry with fresh token
+                            if response.status == 401:
+                                self.access_token = None
+                                retry_count += 1
+                                continue
+                            
+                            raise ValueError(f"Spotify API error: {response.status}")
                         
-                        raise ValueError(f"Spotify API error: {response.status}")
-                    
-                    return await response.json()
-        except Exception as e:
-            logger.error(f"Error in Spotify request: {str(e)}")
-            raise
-
+                        return await response.json()
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                logger.warning(f"Spotify API retry {retry_count}/{max_retries}: {e}")
+                await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+        
+        # All retries failed
+        logger.error(f"Failed Spotify API request after {max_retries} retries: {last_error}")
+        raise ValueError(f"Spotify API request failed: {last_error}")
+        
 # Module-level client instance
 _spotify_client = None
 
@@ -252,7 +276,7 @@ async def get_spotify_track(
     except Exception as e:
         logger.error(f"Error getting Spotify track: {str(e)}")
         return None
-
+        
 async def get_spotify_album(
     album_id: str,
     client: SpotifyClient
@@ -263,7 +287,7 @@ async def get_spotify_album(
         album_data = await client.make_request(f"albums/{album_id}")
         album_name = album_data["name"]
         
-        # Get album tracks
+        # Get album tracks with pagination
         tracks = []
         next_url = album_data["tracks"]["href"].replace(client.API_BASE + "/", "")
         
@@ -303,7 +327,7 @@ async def get_spotify_playlist(
         playlist_data = await client.make_request(f"playlists/{playlist_id}")
         playlist_name = playlist_data["name"]
         
-        # Get playlist tracks
+        # Get playlist tracks with pagination
         tracks = []
         next_url = playlist_data["tracks"]["href"].replace(client.API_BASE + "/", "")
         
@@ -368,7 +392,7 @@ async def get_spotify_artist_top_tracks(
     except Exception as e:
         logger.error(f"Error getting Spotify artist top tracks: {str(e)}")
         return [], "Unknown Artist"
-
+        
 async def process_spotify_tracks(
     tracks: List[Dict[str, Any]],
     playlist: Dict[str, str],
@@ -396,28 +420,40 @@ async def process_spotify_tracks(
         # Take a random sample
         tracks = random.sample(tracks, playlist_limit)
     
-    # Convert each track
-    tasks = []
-    for track in tracks:
-        tasks.append(
-            convert_spotify_track_to_youtube(
-                track,
-                should_split_chapters,
-                youtube_api_key,
-                playlist
-            )
-        )
+    # Convert each track - process in batches to avoid overwhelming system
+    BATCH_SIZE = 5
+    all_results = []
     
-    # Wait for all conversions
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for i in range(0, len(tracks), BATCH_SIZE):
+        batch = tracks[i:i+BATCH_SIZE]
+        batch_tasks = []
+        
+        for track in batch:
+            batch_tasks.append(
+                convert_spotify_track_to_youtube(
+                    track,
+                    should_split_chapters,
+                    youtube_api_key,
+                    playlist
+                )
+            )
+        
+        # Wait for batch to complete
+        batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+        all_results.extend(batch_results)
+        
+        # Small delay between batches to prevent rate limiting
+        if i + BATCH_SIZE < len(tracks):
+            await asyncio.sleep(1)
     
     # Filter out failures
     converted_tracks = []
     not_found_count = 0
     
-    for result in results:
+    for result in all_results:
         if isinstance(result, Exception) or result is None:
             not_found_count += 1
+            logger.warning(f"Failed to convert track: {result if isinstance(result, Exception) else 'Not found'}")
         else:
             converted_tracks.append(result)
     
@@ -441,7 +477,7 @@ async def convert_spotify_track_to_youtube(
     Returns:
         YouTube video metadata or None if not found
     """
-    # Create search query
+    # Create search query with quotes for better matches
     search_query = f'"{track["name"]}" "{track["artist"]}"'
     
     # Try to find on YouTube
@@ -576,3 +612,18 @@ async def get_spotify_suggestions(
     except Exception as e:
         logger.error(f"Error getting Spotify suggestions: {str(e)}")
         return []
+
+async def test_spotify_api(config: Config) -> bool:
+    """Test Spotify API connectivity"""
+    client = get_spotify_client(config)
+    if not client:
+        raise ValueError("Spotify is not configured")
+    
+    # Try to get a token
+    try:
+        await client.get_token()
+        # Make a simple API request to verify token works
+        await client.make_request("browse/new-releases", {"limit": 1})
+        return True
+    except Exception as e:
+        raise ValueError(f"Spotify API test failed: {e}")

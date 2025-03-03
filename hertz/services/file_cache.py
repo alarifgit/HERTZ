@@ -44,31 +44,57 @@ class FileCacheProvider:
             await remove_file_cache(hash_key)
             return None
         
+        # Log cache hit
+        logger.info(f"Using cached file {hash_key} (last accessed: {cache_entry.accessedAt})")
         return file_path
     
     async def cache_file(self, hash_key: str, file_path: str) -> str:
         """Cache a file and add to database"""
-        # Copy file to cache
-        cache_path = os.path.join(self.cache_dir, hash_key)
+        # Create temp path for download
+        tmp_dir = os.path.join(self.cache_dir, 'tmp')
+        os.makedirs(tmp_dir, exist_ok=True)
         
-        # If file already exists, just update access time
-        if os.path.exists(cache_path):
+        tmp_path = os.path.join(tmp_dir, f"{hash_key}.tmp")
+        final_path = os.path.join(self.cache_dir, hash_key)
+        
+        # Skip if already cached
+        if os.path.exists(final_path):
+            # Update accessed time
             await get_file_cache(hash_key)
-            return cache_path
+            return final_path
         
-        # Copy the file
-        shutil.copy2(file_path, cache_path)
-        
-        # Get file size
-        file_size = os.path.getsize(cache_path)
-        
-        # Add to database
-        await create_file_cache(hash_key, file_size)
-        
-        # Run eviction if needed
-        await self.evict_if_needed()
-        
-        return cache_path
+        try:
+            # Copy the file to temp location first if it's different
+            if os.path.abspath(file_path) != os.path.abspath(final_path):
+                shutil.copy2(file_path, tmp_path)
+                
+                # Get file size
+                file_size = os.path.getsize(tmp_path)
+                
+                # Move to final location
+                shutil.move(tmp_path, final_path)
+            else:
+                # File is already in the right place, just get size
+                file_size = os.path.getsize(file_path)
+            
+            # Register in database
+            await create_file_cache(hash_key, file_size)
+            
+            logger.info(f"Successfully cached file {hash_key} ({file_size} bytes)")
+            
+            # Run eviction if needed
+            await self.evict_if_needed()
+            
+            return final_path
+        except Exception as e:
+            logger.error(f"Error caching file {hash_key}: {e}")
+            # Clean up tmp file if it exists
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up tmp file: {cleanup_error}")
+            raise
     
     async def cleanup(self) -> None:
         """Clean up orphaned cache files and evict if over limit"""
@@ -112,7 +138,7 @@ class FileCacheProvider:
                         logger.error(f"Error removing temporary file: {e}")
     
     async def evict_if_needed(self) -> None:
-        """Evict oldest files if cache size exceeds limit"""
+        """Evict oldest files if cache size exceeds limit with proper locking"""
         async with self._eviction_lock:
             # Get total size of cache
             total_size = await get_total_cache_size()

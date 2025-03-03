@@ -1,6 +1,6 @@
 # hertz/config.py
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from enum import Enum
 from pydantic import BaseModel, Field, validator
 
@@ -30,6 +30,7 @@ class Config(BaseModel):
     BOT_ACTIVITY_TYPE: ActivityType = ActivityType.LISTENING
     BOT_ACTIVITY: str = "music"
     BOT_ACTIVITY_URL: Optional[str] = None
+    TEST_GUILDS: str = ""  # Comma-separated list of guild IDs for testing
     
     # Validators to handle case insensitivity
     @validator('BOT_ACTIVITY_TYPE', pre=True)
