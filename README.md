@@ -69,7 +69,7 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/hertz.git
+   git clone https://github.com/alarifgit/hertz.git
    cd hertz
    ```
 
