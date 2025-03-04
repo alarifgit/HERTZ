@@ -1,6 +1,6 @@
 # HERTZ - Discord Music Bot
 
-A powerful, feature-rich Discord music bot for playing music from YouTube, Spotify, and other sources in your Discord server voice channels. HERTZ is a Python-based rewrite of the popular [Muse](https://github.com/codetheweb/muse) bot with enhanced features and improved stability.
+A powerful, feature-rich Discord music bot for playing music from YouTube, Spotify, and other sources in your Discord server voice channels. HERTZ is a Python-based rewrite of the popular [muse](https://github.com/codetheweb/muse) bot with enhanced features and improved stability.
 
 ![HERTZ Logo](https://via.placeholder.com/150?text=HERTZ)
 
