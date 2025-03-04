@@ -1,33 +1,56 @@
 # HERTZ - Discord Music Bot
 
-A feature-rich Discord music bot for playing music from YouTube, Spotify, and other sources in your Discord server voice channels.
+A powerful, feature-rich Discord music bot for playing music from YouTube, Spotify, and other sources in your Discord server voice channels. HERTZ is a Python-based rewrite of the popular [Muse](https://github.com/codetheweb/muse) bot with enhanced features and improved stability.
 
 ![HERTZ Logo](https://via.placeholder.com/150?text=HERTZ)
 
 ## Features
 
 - **Multiple Music Sources**:
-  - YouTube videos and playlists
+  - YouTube videos and playlists with search and autocomplete
   - Spotify tracks, albums, playlists, and artists
   - Direct HTTP stream links
   
 - **Advanced Playback Controls**:
-  - Play/pause/resume/skip/previous track controls
-  - Queue management with shuffle and loop
-  - Volume adjustment
-  - Seeking within tracks
-  - Automatic disconnection when voice channel is empty
+  - Seamless play/pause/resume functionality
+  - Precise seeking within tracks (`/seek`, `/fseek`)
+  - Track looping and queue looping (`/loop`, `/loop-queue`)
+  - Dynamic volume control with automatic adjustment during voice chat
+  - Skip forward/backward in queue history
   
-- **User-Friendly Commands**:
-  - Intuitive slash commands
-  - Autocomplete for search queries
-  - Playlist management
-  - User favorites system
+- **Comprehensive Queue Management**:
+  - Intuitive queue display with pagination
+  - Shuffle, clear, and move functionality
+  - Smart track insertion (next or end of queue)
+  - Chapter splitting for long videos
+  
+- **User-Friendly Experience**:
+  - Slash commands with autocomplete suggestions
+  - Customizable favorites system for quick access to songs
+  - Embedded song information with progress bars
+  - Automatic song announcements
+  - Automatic volume reduction when people speak
+  
+- **Server-Specific Configuration**:
+  - Customizable playlist limits
+  - Adjustable auto-disconnect timers
+  - Default volume and queue page settings
+  - Channel-specific behavior controls
   
 - **Performance Optimized**:
-  - Song caching for faster playback
+  - Efficient file caching system
   - Smart resource management
-  - Stable playback experience
+  - Asynchronous operations for smooth playback
+
+- **Robust Error Handling**:
+  - Automatic recovery from API failures
+  - Graceful handling of disconnections
+  - Detailed logging for troubleshooting
+
+- **Health Monitoring**:
+  - Built-in health dashboard
+  - Performance metrics tracking
+  - Cache statistics and management
 
 ## Installation
 
@@ -90,17 +113,20 @@ HERTZ uses Discord's slash commands system. Here are the available commands:
 
 ### Music Playback
 
-- `/play <query>` - Play music from YouTube, Spotify, or direct link
-  - Options: `immediate`, `shuffle`, `split`, `skip`
+- `/play <query> [immediate] [shuffle] [split] [skip]` - Play music from YouTube, Spotify, or a direct link
+  - `immediate` - Add track to the front of the queue
+  - `shuffle` - Shuffle playlist items
+  - `split` - Split videos into chapters
+  - `skip` - Skip the currently playing track
 - `/pause` - Pause the current song
 - `/resume` - Resume playback
 - `/skip [number]` - Skip one or more songs
 - `/next` - Skip to the next song (alias for /skip)
 - `/unskip` - Go back to the previous song
-- `/seek <time>` - Seek to position in the current song
+- `/seek <time>` - Seek to position in the current song (e.g., "1:30", "90s")
 - `/fseek <time>` - Seek forward in the current song
 - `/replay` - Restart the current song
-- `/stop` - Stop playback and clear queue
+- `/stop` - Stop playback, disconnect, and clear queue
 - `/disconnect` - Disconnect from voice channel
 
 ### Queue Management
@@ -120,7 +146,7 @@ HERTZ uses Discord's slash commands system. Here are the available commands:
 
 ### Favorites
 
-- `/favorites use <name>` - Play a saved favorite
+- `/favorites use <name> [immediate] [shuffle] [split] [skip]` - Play a saved favorite
 - `/favorites list` - List all favorites
 - `/favorites create <name> <query>` - Create a new favorite
 - `/favorites remove <name>` - Remove a favorite
@@ -135,8 +161,15 @@ HERTZ uses Discord's slash commands system. Here are the available commands:
 - `/config set-auto-announce-next-song <value>` - Set auto-announcements
 - `/config set-default-volume <level>` - Set default volume
 - `/config set-default-queue-page-size <page-size>` - Set queue page size
-- `/config set-reduce-vol-when-voice <value>` - Toggle volume reduction
+- `/config set-reduce-vol-when-voice <value>` - Toggle volume reduction when people speak
 - `/config set-reduce-vol-when-voice-target <volume>` - Set reduced volume level
+
+### System Commands
+
+- `/ping` - Check if the bot is responding
+- `/health` - Display bot health metrics
+- `/cache` - Show cache statistics
+- `/dashboard` - Interactive bot metrics dashboard
 
 ## Configuration
 
@@ -154,6 +187,17 @@ HERTZ can be configured with the following environment variables:
 | `BOT_STATUS` | Bot status | `online` |
 | `BOT_ACTIVITY_TYPE` | Activity type | `LISTENING` |
 | `BOT_ACTIVITY` | Activity text | `music` |
+| `BOT_ACTIVITY_URL` | Activity URL (for STREAMING type) | - |
+
+## Health Monitoring
+
+HERTZ includes built-in health monitoring to ensure stability:
+
+- Automatically checks bot connectivity
+- Monitors voice client state consistency
+- Tracks memory and CPU usage
+- Implements health check file for container orchestration
+- Provides `/health` and `/dashboard` commands for real-time metrics
 
 ## License
 
@@ -161,7 +205,7 @@ HERTZ can be configured with the following environment variables:
 
 ## Credits
 
-HERTZ is inspired by [Muse](https://github.com/codetheweb/muse), a TypeScript Discord music bot.
+HERTZ is inspired by [muse](https://github.com/codetheweb/muse), a TypeScript Discord music bot.
 
 ## Contributors
 
