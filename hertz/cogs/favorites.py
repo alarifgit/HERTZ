@@ -6,6 +6,9 @@ import disnake
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
+from ..utils.error_msg import error_msg
+from ..utils.responses import Responses
+
 logger = logging.getLogger(__name__)
 
 class FavoritesCommands(commands.Cog):
@@ -14,7 +17,6 @@ class FavoritesCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    # CHANGED THIS LINE - using decorator pattern instead of variable assignment
     @commands.slash_command(
         name="favorites",
         description="Manage your favorite songs and playlists"
@@ -56,20 +58,22 @@ class FavoritesCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         # Get the favorite
         from ..db.client import get_favorite_query
         favorite = await get_favorite_query(str(inter.guild.id), name)
         if not favorite:
-            await inter.followup.send("🚫 ope: no favorite with that name exists")
+            await inter.followup.send(error_msg("no favorite with that name exists"))
             return
+        
+        logger.info(f"[COMMAND] {inter.author.display_name} used favorite '{name}'")
         
         # Use play command to play this query
         play_command = self.bot.get_slash_command("play")
         if not play_command:
-            await inter.followup.send("🚫 ope: play command not found")
+            await inter.followup.send(error_msg("play command not found"))
             return
             
         # Create a new interaction context to invoke the play command
@@ -93,12 +97,15 @@ class FavoritesCommands(commands.Cog):
         favorites = await get_favorite_queries(str(inter.guild.id))
         
         if not favorites:
-            await inter.followup.send("there aren't any favorites yet")
+            await inter.followup.send("📭 No saved frequencies found. Create favorites with `/favorites create`")
             return
+        
+        logger.info(f"[COMMAND] {inter.author.display_name} listed favorites")
         
         # Create embed with favorites
         embed = disnake.Embed(
-            title="Favorite Songs and Playlists",
+            title="🎵 Saved Frequencies",
+            description="Your favorite tracks and playlists",
             color=disnake.Color.blue()
         )
         
@@ -147,7 +154,7 @@ class FavoritesCommands(commands.Cog):
         from ..db.client import get_favorite_query, create_favorite_query
         existing = await get_favorite_query(str(inter.guild.id), name)
         if existing:
-            await inter.followup.send("🚫 ope: a favorite with that name already exists")
+            await inter.followup.send(error_msg("a favorite with that name already exists"))
             return
         
         # Create the favorite
@@ -159,10 +166,11 @@ class FavoritesCommands(commands.Cog):
                 query=query
             )
             
-            await inter.followup.send("👍 favorite created")
+            logger.info(f"[COMMAND] {inter.author.display_name} created favorite '{name}'")
+            await inter.followup.send(Responses.FAVORITE_CREATED)
         except Exception as e:
-            logger.error(f"Error creating favorite: {e}")
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            logger.error(f"[ERROR] Error creating favorite: {e}")
+            await inter.followup.send(error_msg(str(e)))
     
     @favorites_group.sub_command(
         name="remove",
@@ -183,22 +191,23 @@ class FavoritesCommands(commands.Cog):
         from ..db.client import get_favorite_query, delete_favorite_query
         favorite = await get_favorite_query(str(inter.guild.id), name)
         if not favorite:
-            await inter.followup.send("🚫 ope: no favorite with that name exists")
+            await inter.followup.send(error_msg("no favorite with that name exists"))
             return
         
         # Check if user is allowed to remove
         is_owner = inter.author.id == inter.guild.owner_id
         if favorite.authorId != str(inter.author.id) and not is_owner:
-            await inter.followup.send("🚫 ope: you can only remove your own favorites")
+            await inter.followup.send(error_msg("you can only remove your own favorites"))
             return
         
         # Remove the favorite
         try:
             await delete_favorite_query(favorite.id)
-            await inter.followup.send("👍 favorite removed")
+            logger.info(f"[COMMAND] {inter.author.display_name} removed favorite '{name}'")
+            await inter.followup.send(Responses.FAVORITE_REMOVED)
         except Exception as e:
-            logger.error(f"Error removing favorite: {e}")
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            logger.error(f"[ERROR] Error removing favorite: {e}")
+            await inter.followup.send(error_msg(str(e)))
     
     @use_favorite.autocomplete("name")
     @remove_favorite.autocomplete("name")
@@ -234,5 +243,5 @@ class FavoritesCommands(commands.Cog):
                 for f in favorites[:25]
             ]
         except Exception as e:
-            logger.error(f"Error in favorites autocomplete: {e}")
+            logger.error(f"[ERROR] Error in favorites autocomplete: {e}")
             return []

@@ -10,6 +10,8 @@ from disnake.ext import commands
 
 from ..utils.voice import get_member_voice_channel, get_most_popular_voice_channel
 from ..utils.embeds import create_playing_embed
+from ..utils.error_msg import error_msg
+from ..utils.responses import Responses
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,7 @@ class MusicCommands(commands.Cog):
         """Play a song or playlist from various sources"""
         # Check if user is in a voice channel
         if not inter.author.voice:
-            await inter.response.send_message("🚫 ope: you need to be in a voice channel", ephemeral=True)
+            await inter.response.send_message(error_msg("you need to be in a voice channel"), ephemeral=True)
             return
         
         # Defer response to allow time for processing
@@ -71,6 +73,8 @@ class MusicCommands(commands.Cog):
             from ..services.get_songs import GetSongs
             get_songs = GetSongs(self.bot.config)
             
+            logger.info(f"[COMMAND] Play request from {inter.author.display_name}: {query[:50]}...")
+            
             new_songs, extra_msg = await get_songs.get_songs(
                 query=query.strip(),
                 playlist_limit=settings.playlistLimit,
@@ -78,13 +82,14 @@ class MusicCommands(commands.Cog):
             )
             
             if not new_songs:
-                await inter.followup.send("🚫 ope: no songs found", ephemeral=True)
+                await inter.followup.send(error_msg("no songs found"), ephemeral=True)
                 return
                 
             # Shuffle if requested
             if shuffle and len(new_songs) > 1:
                 import random
                 random.shuffle(new_songs)
+                logger.info(f"[COMMAND] Shuffled {len(new_songs)} tracks")
                 
             # Add songs to queue
             for song in new_songs:
@@ -105,8 +110,15 @@ class MusicCommands(commands.Cog):
                 
                 # Include embed with current playing song
                 embed = create_playing_embed(player)
+                
+                # Format response message
+                if status_msg:
+                    response = status_msg
+                else:
+                    response = Responses.NOW_PLAYING.format(player.get_current().title)
+                    
                 await inter.followup.send(
-                    content=status_msg, 
+                    content=response, 
                     embed=embed,
                     ephemeral=settings.queueAddResponseEphemeral
                 )
@@ -121,38 +133,38 @@ class MusicCommands(commands.Cog):
                 try:
                     await player.forward(1)
                 except Exception as e:
-                    logger.error(f"Error skipping: {str(e)}")
-                    await inter.followup.send("🚫 ope: no song to skip to", ephemeral=True)
+                    logger.error(f"[ERROR] Skip failed: {str(e)}")
+                    await inter.followup.send(error_msg("no song to skip to"), ephemeral=True)
                     return
                     
-            # Build response message
-            status_msg = ""
-            if extra_msg:
-                if status_msg:
-                    extra_msg = f"{status_msg}, {extra_msg}"
-                else:
-                    extra_msg = f"({extra_msg})"
-            elif status_msg:
-                extra_msg = f"({status_msg})"
-            else:
-                extra_msg = ""
-                
             # Format response based on number of songs added
             first_song = new_songs[0]
+            position_str = "front" if immediate else ""
+            
             if len(new_songs) == 1:
-                await inter.followup.send(
-                    f"u betcha, **{first_song['title']}** added to the{' front of the' if immediate else ''} queue{' and current track skipped' if skip else ''} {extra_msg}",
-                    ephemeral=settings.queueAddResponseEphemeral
+                response = Responses.track_added(
+                    first_song['title'], 
+                    position_str, 
+                    extra_msg, 
+                    skip
                 )
             else:
-                await inter.followup.send(
-                    f"u betcha, **{first_song['title']}** and {len(new_songs) - 1} other songs were added to the queue{' and current track skipped' if skip else ''} {extra_msg}",
-                    ephemeral=settings.queueAddResponseEphemeral
+                response = Responses.tracks_added(
+                    first_song['title'], 
+                    len(new_songs) - 1, 
+                    position_str, 
+                    extra_msg, 
+                    skip
                 )
                 
+            await inter.followup.send(
+                response,
+                ephemeral=settings.queueAddResponseEphemeral
+            )
+                
         except Exception as e:
-            logger.error(f"Error in play command: {str(e)}")
-            await inter.followup.send(f"🚫 ope: {str(e)}", ephemeral=True)
+            logger.error(f"[ERROR] Play command error: {str(e)}")
+            await inter.followup.send(error_msg(str(e)), ephemeral=True)
     
     @play.autocomplete("query")
     async def query_autocomplete(self, inter: ApplicationCommandInteraction, query: str):
@@ -177,5 +189,5 @@ class MusicCommands(commands.Cog):
             # Just return simple strings, not dictionaries
             return suggestions[:25]  # Discord limits to 25 choices
         except Exception as e:
-            logger.error(f"Error in autocomplete: {str(e)}")
+            logger.error(f"[ERROR] Autocomplete error: {str(e)}")
             return []

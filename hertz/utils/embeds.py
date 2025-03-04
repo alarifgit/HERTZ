@@ -39,7 +39,7 @@ def get_queue_info(player: Player) -> str:
     queue_size = player.queue_size()
     if queue_size == 0:
         return "-"
-    return "1 song" if queue_size == 1 else f"{queue_size} songs"
+    return "1 track" if queue_size == 1 else f"{queue_size} tracks"
 
 def get_player_ui(player: Player) -> str:
     """Generate a text-based UI for the player controls"""
@@ -52,11 +52,11 @@ def get_player_ui(player: Player) -> str:
     position = player.get_position()
     button = "⏹️" if player.status == Status.PLAYING else "▶️"
     progress_bar = get_progress_bar(10, position / song.length if song.length > 0 else 0)
-    elapsed_time = "live" if song.is_live else f"{pretty_time(position)}/{pretty_time(song.length)}"
+    elapsed_time = "LIVE" if song.is_live else f"{pretty_time(position)}/{pretty_time(song.length)}"
     loop = "🔂" if player.loop_current_song else "🔁" if player.loop_current_queue else ""
     vol = f"{player.get_volume()}%"
     
-    return f"{button} {progress_bar} `[{elapsed_time}]`🔉 {vol} {loop}"
+    return f"{button} {progress_bar} `[{elapsed_time}]` 🔊 {vol} {loop}"
 
 def create_playing_embed(player: Player) -> disnake.Embed:
     """Create an embed for the currently playing song"""
@@ -67,8 +67,12 @@ def create_playing_embed(player: Player) -> disnake.Embed:
     from ..services.player import Status
     
     embed = disnake.Embed()
-    embed.title = "Now Playing" if player.status == Status.PLAYING else "Paused"
-    embed.color = disnake.Color.dark_green() if player.status == Status.PLAYING else disnake.Color.dark_red()
+    
+    # Set a more vibrant color scheme
+    embed.color = disnake.Color.from_rgb(88, 101, 242) if player.status == Status.PLAYING else disnake.Color.from_rgb(237, 66, 69)
+    
+    # More audio-themed titles
+    embed.title = "🎧 Now Transmitting" if player.status == Status.PLAYING else "⏸️ Signal Paused"
     
     # Description with song details and UI
     embed.description = (
@@ -105,8 +109,17 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     from ..services.player import Status
     
     embed = disnake.Embed()
-    embed.title = f"Now Playing {player.loop_current_song and '(loop)' or ''}"
-    embed.color = disnake.Color.dark_green() if player.status == Status.PLAYING else disnake.Color.dark_grey()
+    
+    # Better title and color for queue
+    if player.loop_current_song:
+        embed.title = "🔂 Signal Looping"
+    elif player.loop_current_queue:
+        embed.title = "🔄 Playlist Looping" 
+    else:
+        embed.title = "📻 Audio Stream"
+        
+    # Updated color scheme
+    embed.color = disnake.Color.from_rgb(88, 101, 242) if player.status == Status.PLAYING else disnake.Color.from_rgb(153, 170, 181)
     
     # Description with current song and UI
     description = (
@@ -117,11 +130,11 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     
     # Add queued songs
     if queue_size > 0:
-        description += "**Up next:**\n"
+        description += "**Upcoming Tracks:**\n"
         for i in range(page_start, page_end):
             song = queue[i]
             song_number = i + 1
-            duration = "live" if song.is_live else pretty_time(song.length)
+            duration = "LIVE" if song.is_live else pretty_time(song.length)
             description += f"`{song_number}.` {get_song_title(song, True)} `[{duration}]`\n"
     
     embed.description = description
@@ -129,8 +142,8 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     # Add fields with queue stats
     total_length = sum(song.length for song in queue)
     
-    embed.add_field(name="In queue", value=get_queue_info(player), inline=True)
-    embed.add_field(name="Total length", value=f"{pretty_time(total_length) if total_length > 0 else '-'}", inline=True)
+    embed.add_field(name="Queue Size", value=get_queue_info(player), inline=True)
+    embed.add_field(name="Total Duration", value=f"{pretty_time(total_length) if total_length > 0 else '-'}", inline=True)
     embed.add_field(name="Page", value=f"{page} of {max_page}", inline=True)
     
     # Set footer with source info
@@ -143,8 +156,7 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     
     return embed
 
-# New utility functions for metrics and dashboards
-
+# Create a health embed with the HERTZ personality
 def create_health_embed(bot) -> disnake.Embed:
     """Create an embed with bot health metrics"""
     process = psutil.Process(os.getpid())
@@ -175,27 +187,30 @@ def create_health_embed(bot) -> disnake.Embed:
             seconds_since_update = now - timestamp
             last_update = f"{seconds_since_update} seconds ago"
     
-    # Create embed
+    # Create embed with audio-themed styling
     embed = disnake.Embed(
-        title="Bot Health Status",
-        description="Current status of the HERTZ Discord bot",
-        color=disnake.Color.green()
+        title="📡 System Status Monitor",
+        description="Current HERTZ broadcast metrics",
+        color=disnake.Color.from_rgb(88, 101, 242)
     )
     
-    embed.add_field(name="Status", value="✅ Operational", inline=False)
-    embed.add_field(name="Uptime", value=uptime, inline=True)
-    embed.add_field(name="Last Health Update", value=last_update, inline=True)
-    embed.add_field(name="Connected Guilds", value=str(len(bot.guilds)), inline=True)
+    # Signal strength indicator based on health
+    signal_strength = "▁▂▃▄▅▆▇█"  # Full strength
+    
+    embed.add_field(name="🟢 Signal Strength", value=signal_strength, inline=False)
+    embed.add_field(name="⏱️ Uptime", value=uptime, inline=True)
+    embed.add_field(name="🔄 Last Heartbeat", value=last_update, inline=True)
+    embed.add_field(name="📡 Connected Servers", value=str(len(bot.guilds)), inline=True)
     
     # Add some system stats
     memory_info = process.memory_info()
     memory_usage = memory_info.rss / 1024 / 1024  # Convert to MB
-    embed.add_field(name="Memory Usage", value=f"{memory_usage:.2f} MB", inline=True)
-    embed.add_field(name="CPU Usage", value=f"{process.cpu_percent()}%", inline=True)
+    embed.add_field(name="💾 Memory Usage", value=f"{memory_usage:.2f} MB", inline=True)
+    embed.add_field(name="⚡ CPU Usage", value=f"{process.cpu_percent()}%", inline=True)
     
     # Add active voice connections
     voice_connections = sum(1 for guild in bot.guilds if guild.voice_client is not None)
-    embed.add_field(name="Active Voice Connections", value=str(voice_connections), inline=True)
+    embed.add_field(name="🎧 Active Streams", value=str(voice_connections), inline=True)
     
     return embed
 
@@ -214,18 +229,33 @@ async def create_cache_embed(bot) -> disnake.Embed:
     # Get recent cached songs
     recent_files = await get_recent_file_caches(5)
     
-    # Create embed
+    # Create embed with audio-themed styling
     embed = disnake.Embed(
-        title="Cache Information",
-        color=disnake.Color.blue()
+        title="💽 Audio Cache Status",
+        description="Current track storage information",
+        color=disnake.Color.from_rgb(88, 101, 242)
     )
     
-    embed.add_field(name="Cache Size", value=f"{total_size/1024/1024:.2f} MB / {cache_limit/1024/1024:.2f} MB", inline=False)
-    embed.add_field(name="Usage", value=f"{(total_size/cache_limit)*100:.1f}%", inline=True)
-    embed.add_field(name="Files Cached", value=str(file_count), inline=True)
+    usage_percent = (total_size/cache_limit)*100 if cache_limit > 0 else 0
+    
+    # Create a visual bar for cache usage
+    full_blocks = min(int(usage_percent / 10), 10)
+    usage_bar = "█" * full_blocks + "░" * (10 - full_blocks)
+    
+    embed.add_field(
+        name="📊 Cache Usage", 
+        value=f"`{usage_bar}` {usage_percent:.1f}%\n{total_size/1024/1024:.2f} MB / {cache_limit/1024/1024:.2f} MB", 
+        inline=False
+    )
+    
+    embed.add_field(name="📀 Cached Tracks", value=str(file_count), inline=True)
     
     if recent_files:
-        embed.add_field(name="Recently Cached Songs", value="\n".join([f"{i+1}. {file.hash}" for i, file in enumerate(recent_files)]), inline=False)
+        embed.add_field(
+            name="🆕 Recently Cached",
+            value="\n".join([f"{i+1}. {file.hash[:8]}... ({file.bytes/1024:.1f} KB)" for i, file in enumerate(recent_files)]),
+            inline=False
+        )
     
     return embed
 
@@ -259,20 +289,21 @@ def create_music_stats_embed(bot) -> disnake.Embed:
             total_playing += 1
             guilds_with_music += 1
     
-    # Create embed
+    # Create embed with audio-themed styling
     embed = disnake.Embed(
-        title="Music Playback Statistics",
-        color=disnake.Color.purple()
+        title="🎛️ Audio Dashboard",
+        description="Current broadcast statistics",
+        color=disnake.Color.from_rgb(88, 101, 242)
     )
     
-    embed.add_field(name="Active Music Sessions", value=str(guilds_with_music), inline=True)
-    embed.add_field(name="Total Songs in Queues", value=str(total_queued_songs), inline=True)
-    embed.add_field(name="Currently Playing", value=str(total_playing), inline=True)
+    embed.add_field(name="🎧 Active Streams", value=str(guilds_with_music), inline=True)
+    embed.add_field(name="🎵 Queued Tracks", value=str(total_queued_songs), inline=True)
+    embed.add_field(name="▶️ Now Playing", value=str(total_playing), inline=True)
     
     if most_songs_guild["id"]:
         embed.add_field(
-            name="Server with Largest Queue", 
-            value=f"{most_songs_guild['name']}: {most_songs_guild['count']} songs", 
+            name="📊 Top Server", 
+            value=f"{most_songs_guild['name']}: {most_songs_guild['count']} tracks", 
             inline=False
         )
     

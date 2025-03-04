@@ -15,7 +15,9 @@ from disnake.ext import commands
 
 from ..services.file_cache import FileCacheProvider
 from ..utils.time import pretty_time
+from ..utils.responses import Responses
 
+# Configure logger
 logger = logging.getLogger(__name__)
 
 class MediaSource(enum.Enum):
@@ -85,9 +87,12 @@ class Player:
         self.last_song_url = ""
         self.current_channel = None
         self._playback_event_listeners = []
+        self.just_skipped = False  # Flag to track manual skips
         
         # Store the event loop from the main thread
         self.main_loop = asyncio.get_event_loop()
+        
+        logger.debug(f"[INIT] Player created for guild {guild_id}")
         
     def add_playback_event_listener(self, callback: Callable):
         """Add a callback for playback events"""
@@ -127,10 +132,12 @@ class Player:
         if song.playlist or not immediate:
             # Add to end of queue
             self.queue.append(song)
+            logger.debug(f"[QUEUE] Added '{song.title}' to end of queue")
         else:
             # Add as next song
             insert_at = self.queue_position + 1
             self.queue.insert(insert_at, song)
+            logger.debug(f"[QUEUE] Added '{song.title}' to position {insert_at}")
     
     def clear(self) -> None:
         """Clear the queue but keep current song"""
@@ -138,22 +145,34 @@ class Player:
         if current:
             self.queue = [current]
             self.queue_position = 0
+            logger.info(f"[QUEUE] Cleared all tracks except current '{current.title}'")
         else:
             self.queue = []
             self.queue_position = 0
+            logger.info("[QUEUE] Cleared all tracks (queue was empty)")
     
     def shuffle(self) -> None:
         """Shuffle the queue (excluding current song)"""
         import random
         upcoming = self.get_queue()
+        
+        if not upcoming:
+            logger.debug("[QUEUE] Shuffle requested but queue is empty")
+            return
+            
         random.shuffle(upcoming)
         self.queue = self.queue[:self.queue_position + 1] + upcoming
+        logger.info(f"[QUEUE] Shuffled {len(upcoming)} tracks")
     
     def remove_from_queue(self, index: int, amount: int = 1) -> None:
         """Remove songs from the queue"""
         actual_index = self.queue_position + index
         if 0 <= actual_index < len(self.queue):
+            removed = self.queue[actual_index:actual_index + amount]
             del self.queue[actual_index:actual_index + amount]
+            logger.info(f"[QUEUE] Removed {amount} tracks starting at position {index}")
+        else:
+            logger.warning(f"[QUEUE] Failed to remove tracks: Invalid position {index}")
     
     def move(self, from_pos: int, to_pos: int) -> QueuedSong:
         """Move a song in the queue"""
@@ -161,10 +180,12 @@ class Player:
         actual_to = self.queue_position + to_pos
         
         if not (0 <= actual_from < len(self.queue) and 0 <= actual_to < len(self.queue)):
+            logger.warning(f"[QUEUE] Failed to move: Position out of bounds {from_pos}->{to_pos}")
             raise ValueError("Position out of bounds")
         
         song = self.queue.pop(actual_from)
         self.queue.insert(actual_to, song)
+        logger.info(f"[QUEUE] Moved '{song.title}' from position {from_pos} to {to_pos}")
         return song
     
     def get_position(self) -> int:
@@ -180,6 +201,7 @@ class Player:
         self.volume = max(0, min(100, level))
         if self.voice_client and hasattr(self.voice_client, "source") and self.voice_client.source:
             self.voice_client.source.volume = self.get_volume() / 100.0
+        logger.info(f"[VOLUME] Set to {self.volume}%")
     
     async def connect(self, channel: disnake.VoiceChannel) -> None:
         """Connect to a voice channel"""
@@ -191,8 +213,10 @@ class Player:
         # Connect to the voice channel
         if self.voice_client:
             if self.voice_client.channel.id != channel.id:
+                logger.info(f"[VOICE] Moving to channel '{channel.name}' ({channel.id})")
                 await self.voice_client.move_to(channel)
         else:
+            logger.info(f"[VOICE] Connecting to channel '{channel.name}' ({channel.id})")
             self.voice_client = await channel.connect(reconnect=True)
         
         # Store reference to the channel for auto-announce
@@ -216,9 +240,10 @@ class Player:
             self.loop_current_song = False
             
             try:
+                logger.info("[VOICE] Disconnecting from voice channel")
                 await self.voice_client.disconnect(force=True)
             except Exception as e:
-                logger.warning(f"Error disconnecting: {e}")
+                logger.warning(f"[VOICE] Error disconnecting: {e}")
                 
             self.voice_client = None
             
@@ -239,32 +264,41 @@ class Player:
             self.disconnect_timer.cancel()
             self.disconnect_timer = None
                 
-        # Resume from pause
-        if (self.status == Status.PAUSED and 
-            current_song.url == self.last_song_url):
-            
-            # Get the current tracked position
+        # Determine if we're resuming the same song
+        same_song = current_song.url == self.last_song_url
+        has_position = self.position_in_seconds > 0
+        
+        if same_song and has_position:
             current_position = self.position_in_seconds
-            logger.info(f"Resuming playback for {current_song.title} from position {current_position}s")
+            logger.info(f"[PLAYBACK] Resuming '{current_song.title}' from position {current_position}s")
             
-            # For direct resumption without seeking
-            if self.voice_client.is_paused():
+            # Case 1: Just paused, can directly resume
+            if self.status == Status.PAUSED and self.voice_client.is_paused():
+                logger.debug("[PLAYBACK] Direct resume from pause")
                 self.voice_client.resume()
                 self.status = Status.PLAYING
                 self._start_position_tracking()
                 self._notify_playback_event("resume", song=current_song)
                 return
-            
-            # If we can't directly resume (e.g., after reconnecting),
-            # seek to the current position instead
-            if current_position > 0:
-                logger.info(f"Seeking to position {current_position}s after reconnection")
-                # Keep the status as PAUSED to prevent position reset in seek
-                temp_status = self.status
-                await self.seek(current_position)
-                self.status = Status.PLAYING
-                return
                 
+            # Case 2: Reconnecting or any other state
+            if not current_song.is_live:  # Can't seek in livestreams
+                logger.debug(f"[PLAYBACK] Seeking to position {current_position}s after reconnection")
+                # Store status temporarily to prevent position reset in seek
+                temp_status = self.status
+                try:
+                    await self.seek(current_position)
+                    self.status = Status.PLAYING
+                    return
+                except Exception as e:
+                    logger.error(f"[ERROR] Resuming with seek failed: {e}")
+                    # Continue with normal playback as fallback
+                    self.status = temp_status
+        else:
+            # New song playback
+            logger.info(f"[PLAYBACK] Starting '{current_song.title}'")
+        
+        # Normal playback logic for new songs or fallback
         try:
             # Get offset and duration limits
             offset_seconds = None
@@ -276,8 +310,6 @@ class Player:
             if not current_song.is_live:
                 duration = current_song.length + current_song.offset
             
-            logger.info(f"Starting playback for {current_song.title}")
-                
             # Get audio source
             source = await self._get_audio_source(
                 current_song, 
@@ -288,7 +320,7 @@ class Player:
             # Set up after callback with extra error handling
             def after_playing(error):
                 if error:
-                    logger.error(f"Error in playback callback: {error}")
+                    logger.error(f"[ERROR] Playback callback error: {error}")
                     # Try to log more detailed information
                     import traceback
                     logger.error(traceback.format_exc())
@@ -300,11 +332,11 @@ class Player:
                         lambda: asyncio.create_task(self._handle_song_finished())
                     )
                 except Exception as e:
-                    logger.error(f"Error in after_playing callback: {e}")
+                    logger.error(f"[ERROR] After-playing callback error: {e}")
 
             # Make sure any existing playback is stopped properly
             if self.voice_client.is_playing() or self.voice_client.is_paused():
-                logger.info(f"Stopping existing playback before starting new song")
+                logger.debug("[PLAYBACK] Stopping existing playback before starting new song")
                 self.voice_client.stop()
                 # Small delay to ensure cleanup is complete
                 await asyncio.sleep(0.2)
@@ -312,29 +344,28 @@ class Player:
             # Play the audio
             try:
                 self.voice_client.play(source, after=after_playing)
-                logger.info(f"Playback started for {current_song.title}")
+                logger.info(f"[PLAYBACK] Started '{current_song.title}'")
                 self.status = Status.PLAYING
                 self.last_song_url = current_song.url
                     
-                # Initialize or reset position tracking
-                if current_song.url == self.last_song_url:
-                    # Maintain position tracking if it's the same song
-                    self._start_position_tracking()
-                else:
-                    # Reset position for a new song
+                # Initialize or reset position tracking for new song
+                if not same_song:
                     self._start_position_tracking(0)
+                else:
+                    # Continue position tracking for resumed song
+                    self._start_position_tracking()
                         
                 # Notify listeners
                 self._notify_playback_event("play", song=current_song)
             except Exception as e:
-                logger.error(f"Critical error in voice_client.play: {e}")
+                logger.error(f"[ERROR] Critical error in voice_client.play: {e}")
                 # Detailed error information
                 import traceback
                 logger.error(traceback.format_exc())
                 raise ValueError(f"Failed to start playback: {e}")
                     
         except Exception as e:
-            logger.error(f"Error playing track: {e}")
+            logger.error(f"[ERROR] Error playing track: {e}")
             # Try to recover by skipping to next song
             await self.forward(1)
             raise ValueError(f"Error playing track: {str(e)}")
@@ -349,6 +380,7 @@ class Player:
             
         self.status = Status.PAUSED
         self._stop_position_tracking()
+        logger.info("[PLAYBACK] Paused")
         self._notify_playback_event("pause", song=self.get_current())
     
     async def seek(self, position_seconds: int) -> None:
@@ -367,6 +399,7 @@ class Player:
             raise ValueError("Cannot seek past the end of the song")
             
         real_position = position_seconds + current_song.offset
+        logger.info(f"[PLAYBACK] Seeking to {position_seconds}s in '{current_song.title}'")
         
         # Stop current playback
         if self.voice_client.is_playing() or self.voice_client.is_paused():
@@ -382,7 +415,7 @@ class Player:
         # Set up after callback
         def after_playing(error):
             if error:
-                logger.error(f"Error in playback: {error}")
+                logger.error(f"[ERROR] Playback error after seek: {error}")
             asyncio.run_coroutine_threadsafe(
                 self._handle_song_finished(), 
                 asyncio.get_event_loop()
@@ -396,7 +429,10 @@ class Player:
     
     async def forward_seek(self, seconds: int) -> None:
         """Seek forward by a certain number of seconds"""
-        return await self.seek(self.position_in_seconds + seconds)
+        current_position = self.position_in_seconds
+        target_position = current_position + seconds
+        logger.info(f"[PLAYBACK] Forward seeking {seconds}s from {current_position}s to {target_position}s")
+        return await self.seek(target_position)
     
     async def forward(self, skip: int) -> None:
         """Skip forward in the queue with improved handling"""
@@ -414,6 +450,13 @@ class Player:
             self.queue_position += skip
             self.position_in_seconds = 0
             
+            # Set the skip flag - this is important for handling song finishing
+            self.just_skipped = True
+            
+            current_song = self.get_current()
+            song_title = current_song.title if current_song else "unknown"
+            logger.info(f"[QUEUE] Skipped {skip} tracks to '{song_title}'")
+            
             # Notify about the skip
             self._notify_playback_event("skip", 
                                        old_position=old_position, 
@@ -426,6 +469,7 @@ class Player:
                 await self.play()
         else:
             # Reached end of queue
+            logger.info("[QUEUE] Skip requested but reached end of queue")
             if self.voice_client and (self.voice_client.is_playing() or self.voice_client.is_paused()):
                 self.voice_client.stop()
                 
@@ -438,6 +482,7 @@ class Player:
             disconnect_delay = settings.secondsToWaitAfterQueueEmpties
             
             if disconnect_delay > 0:
+                logger.info(f"[VOICE] Scheduling disconnect in {disconnect_delay}s due to empty queue")
                 async def disconnect_callback():
                     if self.status == Status.IDLE:
                         await self.disconnect()
@@ -457,6 +502,13 @@ class Player:
             self.position_in_seconds = 0
             self._stop_position_tracking()
             
+            # Set the skip flag here too as we're manually changing position
+            self.just_skipped = True
+            
+            current_song = self.get_current()
+            song_title = current_song.title if current_song else "unknown"
+            logger.info(f"[QUEUE] Moved back to previous track '{song_title}'")
+            
             # Notify about going back
             self._notify_playback_event("back", 
                                        old_position=old_position, 
@@ -465,6 +517,7 @@ class Player:
             if self.status != Status.PAUSED:
                 await self.play()
         else:
+            logger.warning("[QUEUE] Cannot go back: Already at first track")
             raise ValueError("No songs to go back to")
     
     async def stop(self) -> None:
@@ -475,6 +528,7 @@ class Player:
         if self.status != Status.PLAYING:
             raise ValueError("Not currently playing")
             
+        logger.info("[PLAYBACK] Stopping playback, disconnecting, and clearing queue")
         await self.disconnect()
         self.queue = []
         self.queue_position = 0
@@ -512,7 +566,7 @@ class Player:
         
         # Use cached file if available
         if cache_path:
-            logger.info(f"Using cached file for {song.title}")
+            logger.debug(f"[CACHE] Using cached file for '{song.title}'")
             try:
                 source = disnake.FFmpegPCMAudio(cache_path, **ffmpeg_options)
                 
@@ -523,14 +577,14 @@ class Player:
                 )
                 return volume_transformer
             except Exception as e:
-                logger.error(f"Error using cached file: {e}")
+                logger.error(f"[ERROR] Error using cached file: {e}")
                 # Fall through to re-download if cache file is invalid
         
         # Handle different sources
         try:
             if song.source == MediaSource.HLS:
                 # Direct stream for HLS
-                logger.info(f"Setting up HLS stream for {song.title}")
+                logger.debug(f"[STREAM] Setting up HLS stream for '{song.title}'")
                 source = disnake.FFmpegPCMAudio(song.url, **ffmpeg_options)
             else:
                 # YouTube source
@@ -545,7 +599,7 @@ class Player:
                 loop = asyncio.get_event_loop()
                 
                 # Extract media info
-                logger.info(f"Extracting info for {song.url}")
+                logger.debug(f"[YOUTUBE] Extracting info for video '{song.url}'")
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = await loop.run_in_executor(
                         None, 
@@ -569,7 +623,7 @@ class Player:
                         # Normalize based on YouTube's loudness data
                         loudness_db = -float(info['loudnessDb'])
                         volume_adjustment = f",volume={loudness_db}dB"
-                        logger.info(f"Applying volume normalization of {loudness_db}dB for {song.title}")
+                        logger.debug(f"[AUDIO] Applying volume normalization of {loudness_db}dB")
                     
                     # Add volume adjustment to ffmpeg options if needed
                     if volume_adjustment:
@@ -585,7 +639,7 @@ class Player:
                         seek_position is None
                     )
                     
-                    logger.info(f"Creating audio source for {song.title}")
+                    logger.debug(f"[AUDIO] Creating audio source")
                     source = disnake.FFmpegPCMAudio(url, **ffmpeg_options)
                     
                     if should_cache:
@@ -597,7 +651,7 @@ class Player:
                         # Delay the cache task slightly to avoid interfering with playback start
                         self.main_loop.call_later(2, start_cache_task)
         except Exception as e:
-            logger.error(f"Error in _get_audio_source: {e}")
+            logger.error(f"[ERROR] Error in _get_audio_source: {e}")
             raise
             
         # Apply volume transformer
@@ -621,7 +675,7 @@ class Player:
             if os.path.exists(final_path):
                 return
             
-            logger.info(f"Caching song {song.title} to {cache_key}")
+            logger.debug(f"[CACHE] Downloading '{song.title}' to cache")
             
             # Use ffmpeg to download and convert
             process = await asyncio.create_subprocess_exec(
@@ -639,7 +693,7 @@ class Player:
             _, stderr = await process.communicate()
             
             if process.returncode != 0:
-                logger.error(f"Error caching song: {stderr.decode()}")
+                logger.error(f"[ERROR] Cache download failed: {stderr.decode()}")
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
                 return
@@ -655,18 +709,18 @@ class Player:
                 # Register in database
                 await self.file_cache.cache_file(cache_key, final_path)
                 
-                logger.info(f"Successfully cached song {song.title} ({file_size} bytes)")
+                logger.debug(f"[CACHE] Cached '{song.title}' ({file_size} bytes)")
                 
                 # Trigger eviction if we've gone over limit
                 await self.file_cache.evict_if_needed()
         except Exception as e:
-            logger.error(f"Error caching song {song.title}: {e}")
+            logger.error(f"[ERROR] Error caching song: {e}")
             # Clean up tmp file if it exists
             if 'tmp_path' in locals() and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except Exception as cleanup_error:
-                    logger.error(f"Error cleaning up tmp file: {cleanup_error}")
+                    logger.error(f"[ERROR] Error cleaning up tmp file: {cleanup_error}")
     
     def _start_position_tracking(self, initial_position: Optional[int] = None) -> None:
         """Start tracking playback position"""
@@ -684,12 +738,14 @@ class Player:
                 pass  # Task was cancelled, that's fine
         
         self.position_tracker_task = asyncio.create_task(update_position())
+        logger.debug(f"[PLAYBACK] Started position tracking at {self.position_in_seconds}s")
     
     def _stop_position_tracking(self) -> None:
         """Stop tracking playback position"""
         if self.position_tracker_task:
             self.position_tracker_task.cancel()
             self.position_tracker_task = None
+            logger.debug("[PLAYBACK] Stopped position tracking")
     
     def _register_voice_activity_listeners(self, channel: disnake.VoiceChannel) -> None:
         """Register listeners for voice activity to adjust volume"""
@@ -718,6 +774,7 @@ class Player:
                 
                 # Reduce volume when someone is speaking
                 if self.channel_to_speaking_users[channel_id]:
+                    logger.debug(f"[VOICE] Reducing volume to {settings.turnDownVolumeWhenPeopleSpeakTarget}% because someone is speaking")
                     self.set_volume(settings.turnDownVolumeWhenPeopleSpeakTarget)
             
             @self.voice_client.listen('speaking_stop')
@@ -728,6 +785,7 @@ class Player:
                     
                     # Restore volume when nobody is speaking
                     if not self.channel_to_speaking_users[channel_id]:
+                        logger.debug(f"[VOICE] Restoring volume to {self.default_volume}% as no one is speaking")
                         self.set_volume(self.default_volume)
         
         # We need to run this in the event loop
@@ -739,17 +797,61 @@ class Player:
             return
             
         if self.loop_current_song:
+            logger.info("[PLAYBACK] Song finished - Looping current song")
             await self.seek(0)
             return
             
         if self.loop_current_queue:
             current_song = self.get_current()
             if current_song:
+                logger.debug("[PLAYBACK] Adding current song to end of queue (queue loop enabled)")
                 self.add(current_song)
-                
-        await self.forward(1)
         
-        # Auto-announce next song if configured
+        # Check if this was a manual skip that just finished playing
+        if self.just_skipped:
+            # If we just manually skipped, don't auto-advance
+            # Just reset the flag for next time
+            logger.debug("[PLAYBACK] Skipping auto-advancement due to recent manual skip")
+            self.just_skipped = False
+            
+            # Auto-announce only if configured
+            await self._auto_announce_if_needed()
+        else:
+            # Normal case - auto-advance to next song
+            logger.debug("[PLAYBACK] Song finished naturally - auto-advancing")
+            
+            # Check if we have a next song
+            next_position = self.queue_position + 1
+            has_next_song = next_position < len(self.queue)
+            
+            if has_next_song:
+                logger.info("[QUEUE] Auto-advancing to next track")
+                await self.forward(1)
+            else:
+                # End of queue reached
+                logger.info("[QUEUE] Reached end of queue")
+                self.status = Status.IDLE
+                
+                # Schedule auto-disconnect if enabled
+                from ..db.client import get_guild_settings
+                settings = await get_guild_settings(self.guild_id)
+                disconnect_delay = settings.secondsToWaitAfterQueueEmpties
+                
+                if disconnect_delay > 0:
+                    logger.info(f"[VOICE] Scheduling disconnect in {disconnect_delay}s due to empty queue")
+                    async def disconnect_callback():
+                        if self.status == Status.IDLE:
+                            await self.disconnect()
+                    
+                    self.disconnect_timer = asyncio.get_event_loop().call_later(
+                        disconnect_delay, 
+                        lambda: asyncio.create_task(disconnect_callback())
+                    )
+                
+                self._notify_playback_event("queue_end")
+    
+    async def _auto_announce_if_needed(self) -> None:
+        """Auto-announce the current song if enabled"""
         current = self.get_current()
         if not current:
             return
@@ -760,8 +862,9 @@ class Player:
         settings = await get_guild_settings(self.guild_id)
         
         if settings.autoAnnounceNextSong and self.current_channel:
+            logger.debug(f"[ANNOUNCE] Auto-announcing current track '{current.title}'")
             embed = create_playing_embed(self)
             try:
                 await self.current_channel.send(embed=embed)
             except Exception as e:
-                logger.error(f"Failed to auto-announce: {e}")
+                logger.error(f"[ERROR] Failed to auto-announce: {e}")

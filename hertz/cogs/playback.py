@@ -8,6 +8,8 @@ from disnake.ext import commands
 
 from ..utils.embeds import create_playing_embed
 from ..utils.time import parse_time, parse_duration, pretty_time
+from ..utils.error_msg import error_msg
+from ..utils.responses import Responses
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +29,17 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         try:
+            logger.info(f"[COMMAND] {inter.author.display_name} paused playback")
             await player.pause()
-            await inter.followup.send("the stop-and-go light is now red")
+            await inter.followup.send(Responses.PAUSED)
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="resume",
@@ -48,7 +51,7 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
@@ -61,16 +64,17 @@ class PlaybackCommands(commands.Cog):
             # If paused or has a current song, resume playback
             if player.status == player.Status.PAUSED or player.get_current():
                 # If we have a current song, try to resume from the tracked position
+                logger.info(f"[COMMAND] {inter.author.display_name} resumed playback")
                 await player.play()
                 
                 await inter.followup.send(
-                    content="the stop-and-go light is now green",
+                    content=Responses.RESUMED,
                     embed=create_playing_embed(player)
                 )
             else:
-                await inter.followup.send("🚫 ope: nothing to play")
+                await inter.followup.send(error_msg("nothing to play"))
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="skip",
@@ -90,23 +94,24 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         try:
+            logger.info(f"[COMMAND] {inter.author.display_name} skipped {number} tracks")
             await player.forward(number)
             
             if player.get_current():
                 await inter.followup.send(
-                    content="keep 'er movin'",
+                    content=Responses.SKIPPED,
                     embed=create_playing_embed(player)
                 )
             else:
-                await inter.followup.send("reached the end of the queue")
+                await inter.followup.send("Reached the end of the queue")
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="next",
@@ -127,19 +132,20 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         try:
+            logger.info(f"[COMMAND] {inter.author.display_name} went back to previous track")
             await player.back()
             await inter.followup.send(
-                content="back 'er up",
+                content=Responses.PREVIOUS,
                 embed=create_playing_embed(player)
             )
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="seek",
@@ -149,7 +155,7 @@ class PlaybackCommands(commands.Cog):
         self,
         inter: ApplicationCommandInteraction,
         time: str = commands.Param(
-            description="Position to seek to (e.g. '1:30', '90s', '1m30s')"
+            description="Position to seek to (e.g. '1:30', '90s')"
         )
     ):
         """Seek to a specific position in the current song"""
@@ -157,18 +163,18 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         current_song = player.get_current()
         
         if not current_song:
-            await inter.followup.send("🚫 ope: nothing is playing")
+            await inter.followup.send(error_msg("nothing is playing"))
             return
         
         if current_song.is_live:
-            await inter.followup.send("🚫 ope: can't seek in a livestream")
+            await inter.followup.send(error_msg("can't seek in a livestream"))
             return
         
         try:
@@ -181,14 +187,15 @@ class PlaybackCommands(commands.Cog):
                 seek_time = parse_duration(time)
             
             if seek_time > current_song.length:
-                await inter.followup.send("🚫 ope: can't seek past the end of the song")
+                await inter.followup.send(error_msg("can't seek past the end of the song"))
                 return
             
+            logger.info(f"[COMMAND] {inter.author.display_name} seeked to {seek_time}s")
             await player.seek(seek_time)
-            await inter.followup.send(f"👍 seeked to {pretty_time(player.get_position())}")
+            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
             
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="fseek",
@@ -206,18 +213,18 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         current_song = player.get_current()
         
         if not current_song:
-            await inter.followup.send("🚫 ope: nothing is playing")
+            await inter.followup.send(error_msg("nothing is playing"))
             return
         
         if current_song.is_live:
-            await inter.followup.send("🚫 ope: can't seek in a livestream")
+            await inter.followup.send(error_msg("can't seek in a livestream"))
             return
         
         try:
@@ -229,14 +236,15 @@ class PlaybackCommands(commands.Cog):
             
             current_position = player.get_position()
             if current_position + forward_time > current_song.length:
-                await inter.followup.send("🚫 ope: can't seek past the end of the song")
+                await inter.followup.send(error_msg("can't seek past the end of the song"))
                 return
             
+            logger.info(f"[COMMAND] {inter.author.display_name} forward seeked by {forward_time}s")
             await player.forward_seek(forward_time)
-            await inter.followup.send(f"👍 seeked to {pretty_time(player.get_position())}")
+            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
             
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="replay",
@@ -248,25 +256,26 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         current_song = player.get_current()
         
         if not current_song:
-            await inter.followup.send("🚫 ope: nothing is playing")
+            await inter.followup.send(error_msg("nothing is playing"))
             return
         
         if current_song.is_live:
-            await inter.followup.send("🚫 ope: can't replay a livestream")
+            await inter.followup.send(error_msg("can't replay a livestream"))
             return
         
         try:
+            logger.info(f"[COMMAND] {inter.author.display_name} restarted current track")
             await player.seek(0)
-            await inter.followup.send("👍 replayed the current song")
+            await inter.followup.send(Responses.REPLAYED)
         except ValueError as e:
-            await inter.followup.send(f"🚫 ope: {str(e)}")
+            await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="loop",
@@ -278,13 +287,13 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if player.status == player.Status.IDLE:
-            await inter.followup.send("🚫 ope: no song to loop!")
+            await inter.followup.send(error_msg("no song to loop!"))
             return
         
         # Disable queue looping if enabled
@@ -294,8 +303,9 @@ class PlaybackCommands(commands.Cog):
         # Toggle song looping
         player.loop_current_song = not player.loop_current_song
         
+        logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_song else 'disabled'} song loop")
         await inter.followup.send(
-            "looped :)" if player.loop_current_song else "stopped looping :("
+            Responses.LOOPING if player.loop_current_song else Responses.LOOP_STOPPED
         )
     
     @commands.slash_command(
@@ -316,17 +326,18 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if not player.get_current():
-            await inter.followup.send("🚫 ope: nothing is playing")
+            await inter.followup.send(error_msg("nothing is playing"))
             return
         
+        logger.info(f"[COMMAND] {inter.author.display_name} set volume to {level}%")
         player.set_volume(level)
-        await inter.followup.send(f"Set volume to {level}%")
+        await inter.followup.send(Responses.VOLUME_SET.format(level))
     
     @commands.slash_command(
         name="disconnect",
@@ -338,17 +349,18 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if not player.voice_client:
-            await inter.followup.send("🚫 ope: not connected")
+            await inter.followup.send(error_msg("not connected"))
             return
         
+        logger.info(f"[COMMAND] {inter.author.display_name} disconnected bot from voice")
         await player.disconnect()
-        await inter.followup.send("u betcha, disconnected")
+        await inter.followup.send(Responses.DISCONNECTED)
     
     @commands.slash_command(
         name="stop",
@@ -360,18 +372,19 @@ class PlaybackCommands(commands.Cog):
         
         # Check if user is in voice
         if not inter.author.voice:
-            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            await inter.followup.send(error_msg("you need to be in a voice channel"))
             return
         
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if not player.voice_client:
-            await inter.followup.send("🚫 ope: not connected")
+            await inter.followup.send(error_msg("not connected"))
             return
         
         if player.status != player.Status.PLAYING:
-            await inter.followup.send("🚫 ope: not currently playing")
+            await inter.followup.send(error_msg("not currently playing"))
             return
         
+        logger.info(f"[COMMAND] {inter.author.display_name} stopped playback and cleared queue")
         await player.stop()
-        await inter.followup.send("u betcha, stopped")
+        await inter.followup.send(Responses.STOPPED)
