@@ -30,8 +30,8 @@ os.makedirs('/data/cache', exist_ok=True)
 os.makedirs('/data/cache/tmp', exist_ok=True)
 
 try:
-    from .bot import HertzBot
-    from .config import Config
+    from hertz.bot import HertzBot
+    from hertz.config import load_config
     
     def main():
         logger.info("Starting HERTZ Discord bot...")

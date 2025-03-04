@@ -44,12 +44,11 @@ class FileCacheProvider:
             await remove_file_cache(hash_key)
             return None
         
-        # Log cache hit
         logger.info(f"Using cached file {hash_key} (last accessed: {cache_entry.accessedAt})")
         return file_path
     
     async def cache_file(self, hash_key: str, file_path: str) -> str:
-        """Cache a file and add to database"""
+        """Cache a file and add to database with proper locking"""
         # Create temp path for download
         tmp_dir = os.path.join(self.cache_dir, 'tmp')
         os.makedirs(tmp_dir, exist_ok=True)
@@ -86,10 +85,11 @@ class FileCacheProvider:
             await self.evict_if_needed()
             
             return final_path
+            
         except Exception as e:
             logger.error(f"Error caching file {hash_key}: {e}")
             # Clean up tmp file if it exists
-            if os.path.exists(tmp_path):
+            if 'tmp_path' in locals() and os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
                 except Exception as cleanup_error:

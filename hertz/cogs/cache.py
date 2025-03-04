@@ -1,7 +1,7 @@
 # hertz/cogs/cache.py
 import logging
 import os
-from typing import Optional, List
+from typing import Optional
 
 import disnake
 from disnake import ApplicationCommandInteraction
@@ -16,7 +16,7 @@ class CacheCommands(commands.Cog):
         self.bot = bot
     
     @commands.slash_command(
-        name="cache-info",
+        name="cache",
         description="Show information about the file cache"
     )
     async def cache_info(self, inter: ApplicationCommandInteraction):
@@ -24,7 +24,7 @@ class CacheCommands(commands.Cog):
         await inter.response.defer()
         
         try:
-            from ..db.client import get_total_cache_size, get_recent_file_caches
+            from ..db.client import get_total_cache_size
             total_size = await get_total_cache_size()
             
             # Get cache limit
@@ -35,6 +35,7 @@ class CacheCommands(commands.Cog):
             file_count = len([f for f in os.listdir(cache_dir) if os.path.isfile(os.path.join(cache_dir, f)) and not f.endswith('.tmp')])
             
             # Get recent cached songs (limited to 5)
+            from ..db.client import get_recent_file_caches  # You'll need to add this
             recent_files = await get_recent_file_caches(5)
             
             # Create embed with cache info
@@ -48,14 +49,7 @@ class CacheCommands(commands.Cog):
             embed.add_field(name="Files Cached", value=str(file_count), inline=True)
             
             if recent_files:
-                recent_details = []
-                for idx, file in enumerate(recent_files):
-                    song_title = file.hash  # Ideally we'd have song titles here, but we'd need to track those in DB
-                    file_size = f"{file.bytes/1024/1024:.2f} MB"
-                    access_time = file.accessedAt.strftime("%Y-%m-%d %H:%M:%S")
-                    recent_details.append(f"{idx+1}. {song_title} ({file_size}) - Last accessed: {access_time}")
-                
-                embed.add_field(name="Recently Accessed Songs", value="\n".join(recent_details), inline=False)
+                embed.add_field(name="Recently Cached Songs", value="\n".join([f"{i+1}. {file.hash}" for i, file in enumerate(recent_files)]), inline=False)
             
             await inter.followup.send(embed=embed)
             

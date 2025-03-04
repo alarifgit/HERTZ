@@ -58,8 +58,9 @@ class PlaybackCommands(commands.Cog):
             if not player.voice_client and inter.author.voice:
                 await player.connect(inter.author.voice.channel)
             
-            # If we have a current song, try to resume from the tracked position
+            # If paused or has a current song, resume playback
             if player.status == player.Status.PAUSED or player.get_current():
+                # If we have a current song, try to resume from the tracked position
                 await player.play()
                 
                 await inter.followup.send(
@@ -70,7 +71,7 @@ class PlaybackCommands(commands.Cog):
                 await inter.followup.send("🚫 ope: nothing to play")
         except ValueError as e:
             await inter.followup.send(f"🚫 ope: {str(e)}")
-            
+    
     @commands.slash_command(
         name="skip",
         description="Skip the current song"
@@ -139,7 +140,7 @@ class PlaybackCommands(commands.Cog):
             )
         except ValueError as e:
             await inter.followup.send(f"🚫 ope: {str(e)}")
-
+    
     @commands.slash_command(
         name="seek",
         description="Seek to a position in the current song"
@@ -236,7 +237,7 @@ class PlaybackCommands(commands.Cog):
             
         except ValueError as e:
             await inter.followup.send(f"🚫 ope: {str(e)}")
-
+    
     @commands.slash_command(
         name="replay",
         description="Restart the current song"
@@ -326,7 +327,7 @@ class PlaybackCommands(commands.Cog):
         
         player.set_volume(level)
         await inter.followup.send(f"Set volume to {level}%")
-        
+    
     @commands.slash_command(
         name="disconnect",
         description="Pause and disconnect from voice channel"
@@ -352,25 +353,25 @@ class PlaybackCommands(commands.Cog):
     @commands.slash_command(
         name="stop",
         description="Stop playback, disconnect, and clear all songs"
-        )
-        async def stop(self, inter: ApplicationCommandInteraction):
-            """Stop playback, disconnect, and clear the queue"""
-            await inter.response.defer()
-            
-            # Check if user is in voice
-            if not inter.author.voice:
-                await inter.followup.send("🚫 ope: you need to be in a voice channel")
-                return
-            
-            player = self.bot.player_manager.get_player(inter.guild.id)
-            
-            if not player.voice_client:
-                await inter.followup.send("🚫 ope: not connected")
-                return
-            
-            if player.status != player.Status.PLAYING:
-                await inter.followup.send("🚫 ope: not currently playing")
-                return
-            
-            await player.stop()
-            await inter.followup.send("u betcha, stopped")
+    )
+    async def stop(self, inter: ApplicationCommandInteraction):
+        """Stop playback, disconnect, and clear the queue"""
+        await inter.response.defer()
+        
+        # Check if user is in voice
+        if not inter.author.voice:
+            await inter.followup.send("🚫 ope: you need to be in a voice channel")
+            return
+        
+        player = self.bot.player_manager.get_player(inter.guild.id)
+        
+        if not player.voice_client:
+            await inter.followup.send("🚫 ope: not connected")
+            return
+        
+        if player.status != player.Status.PLAYING:
+            await inter.followup.send("🚫 ope: not currently playing")
+            return
+        
+        await player.stop()
+        await inter.followup.send("u betcha, stopped")

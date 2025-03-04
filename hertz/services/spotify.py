@@ -143,7 +143,7 @@ class SpotifyClient:
         # All retries failed
         logger.error(f"Failed Spotify API request after {max_retries} retries: {last_error}")
         raise ValueError(f"Spotify API request failed: {last_error}")
-        
+
 # Module-level client instance
 _spotify_client = None
 
@@ -276,7 +276,7 @@ async def get_spotify_track(
     except Exception as e:
         logger.error(f"Error getting Spotify track: {str(e)}")
         return None
-        
+
 async def get_spotify_album(
     album_id: str,
     client: SpotifyClient
@@ -392,7 +392,7 @@ async def get_spotify_artist_top_tracks(
     except Exception as e:
         logger.error(f"Error getting Spotify artist top tracks: {str(e)}")
         return [], "Unknown Artist"
-        
+
 async def process_spotify_tracks(
     tracks: List[Dict[str, Any]],
     playlist: Dict[str, str],

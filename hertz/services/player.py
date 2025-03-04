@@ -202,7 +202,7 @@ class Player:
         self._register_voice_activity_listeners(channel)
     
     async def disconnect(self) -> None:
-        """Disconnect from voice channel but preserve position for resuming"""
+        """Disconnect from voice channel"""
         self._stop_position_tracking()
         
         if self.disconnect_timer:
@@ -210,9 +210,10 @@ class Player:
             self.disconnect_timer = None
             
         if self.voice_client:
-            # Remember we're disconnecting but not resetting position
             if self.status == Status.PLAYING:
-                self.status = Status.PAUSED
+                await self.pause()
+                
+            self.loop_current_song = False
             
             try:
                 await self.voice_client.disconnect(force=True)
@@ -221,7 +222,7 @@ class Player:
                 
             self.voice_client = None
             
-        # Keep the status as PAUSED not IDLE to indicate we have a song ready to resume
+        self.status = Status.IDLE
         self._notify_playback_event("disconnect")
     
     async def play(self) -> None:
@@ -367,9 +368,6 @@ class Player:
             
         real_position = position_seconds + current_song.offset
         
-        # Store current status to restore after seek
-        previous_status = self.status
-        
         # Stop current playback
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             self.voice_client.stop()
@@ -392,11 +390,7 @@ class Player:
         
         # Play from new position
         self.voice_client.play(source, after=after_playing)
-        
-        # Restore previous status (either PLAYING or PAUSED)
-        self.status = previous_status
-        
-        # Start position tracking
+        self.status = Status.PLAYING
         self._start_position_tracking(position_seconds)
         self._notify_playback_event("seek", song=current_song, position=position_seconds)
     
@@ -405,7 +399,7 @@ class Player:
         return await self.seek(self.position_in_seconds + seconds)
     
     async def forward(self, skip: int) -> None:
-        """Skip forward in the queue"""
+        """Skip forward in the queue with improved handling"""
         self._stop_position_tracking()
         
         # Save current loop settings
@@ -484,7 +478,6 @@ class Player:
         await self.disconnect()
         self.queue = []
         self.queue_position = 0
-        self.status = Status.IDLE  # Make sure we set to IDLE for full stop
         self._notify_playback_event("stop")
     
     # Private helper methods
@@ -494,7 +487,7 @@ class Player:
         seek_position: Optional[int] = None,
         duration: Optional[int] = None
     ) -> disnake.PCMVolumeTransformer:
-        """Get an audio source for the given song with improved error handling"""
+        """Get an audio source for the given song with better error handling"""
         import yt_dlp
         
         # Generate cache key
