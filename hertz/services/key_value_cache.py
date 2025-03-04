@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
+# Define different cache expiry times
+ONE_HOUR_IN_SECONDS = 60 * 60
+TEN_MINUTES_IN_SECONDS = 10 * 60
+ONE_MINUTE_IN_SECONDS = 60
+
 class KeyValueCache:
     """
     Key-value cache service for storing API responses
@@ -56,7 +61,7 @@ class KeyValueCache:
         func: Callable[..., T],
         *args: Any,
         key: Optional[str] = None,
-        ttl: int = 3600,
+        ttl: int = ONE_HOUR_IN_SECONDS,
         **kwargs: Any
     ) -> T:
         """

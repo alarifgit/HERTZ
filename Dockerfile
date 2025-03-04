@@ -28,7 +28,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg=7:* \
         openssl=* \
-        ca-certificates=* && \
+        ca-certificates=* \
+        procps=* && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -63,8 +64,8 @@ RUN chown -R hertz:hertz /app
 USER hertz
 
 # Add health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD ps aux | grep '[p]ython -m hertz' || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=15s --retries=3 \
+    CMD test -f /data/health_status && [ $(($(date +%s) - $(cat /data/health_status))) -lt 30 ] || exit 1
 
 # Run the bot
 CMD ["python", "-m", "hertz"]

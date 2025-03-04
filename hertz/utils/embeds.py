@@ -1,6 +1,10 @@
 # hertz/utils/embeds.py
 import disnake
 from typing import Optional
+import os
+import time
+import psutil
+import asyncio
 
 from ..services.player import Player
 from .time import pretty_time
@@ -136,5 +140,140 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     # Set thumbnail if available
     if current_song.thumbnail_url:
         embed.set_thumbnail(url=current_song.thumbnail_url)
+    
+    return embed
+
+# New utility functions for metrics and dashboards
+
+def create_health_embed(bot) -> disnake.Embed:
+    """Create an embed with bot health metrics"""
+    process = psutil.Process(os.getpid())
+    
+    # Calculate uptime
+    start_time = process.create_time()
+    uptime_seconds = time.time() - start_time
+    
+    # Format uptime nicely
+    days, remainder = divmod(uptime_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    if days > 0:
+        uptime = f"{int(days)}d {int(hours)}h {int(minutes)}m"
+    elif hours > 0:
+        uptime = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+    else:
+        uptime = f"{int(minutes)}m {int(seconds)}s"
+    
+    # Get last health check time
+    health_file = '/data/health_status'
+    last_update = "Unknown"
+    if os.path.exists(health_file):
+        with open(health_file, 'r') as f:
+            timestamp = int(f.read().strip())
+            now = int(time.time())
+            seconds_since_update = now - timestamp
+            last_update = f"{seconds_since_update} seconds ago"
+    
+    # Create embed
+    embed = disnake.Embed(
+        title="Bot Health Status",
+        description="Current status of the HERTZ Discord bot",
+        color=disnake.Color.green()
+    )
+    
+    embed.add_field(name="Status", value="✅ Operational", inline=False)
+    embed.add_field(name="Uptime", value=uptime, inline=True)
+    embed.add_field(name="Last Health Update", value=last_update, inline=True)
+    embed.add_field(name="Connected Guilds", value=str(len(bot.guilds)), inline=True)
+    
+    # Add some system stats
+    memory_info = process.memory_info()
+    memory_usage = memory_info.rss / 1024 / 1024  # Convert to MB
+    embed.add_field(name="Memory Usage", value=f"{memory_usage:.2f} MB", inline=True)
+    embed.add_field(name="CPU Usage", value=f"{process.cpu_percent()}%", inline=True)
+    
+    # Add active voice connections
+    voice_connections = sum(1 for guild in bot.guilds if guild.voice_client is not None)
+    embed.add_field(name="Active Voice Connections", value=str(voice_connections), inline=True)
+    
+    return embed
+
+async def create_cache_embed(bot) -> disnake.Embed:
+    """Create an embed with cache statistics"""
+    from ..db.client import get_total_cache_size, get_recent_file_caches
+    
+    # Get cache data asynchronously (without asyncio.run)
+    total_size = await get_total_cache_size()
+    cache_limit = bot.config.cache_limit_bytes
+    
+    # Get count of cached files
+    cache_dir = bot.config.CACHE_DIR
+    file_count = len([f for f in os.listdir(cache_dir) if os.path.isfile(os.path.join(cache_dir, f)) and not f.endswith('.tmp')])
+    
+    # Get recent cached songs
+    recent_files = await get_recent_file_caches(5)
+    
+    # Create embed
+    embed = disnake.Embed(
+        title="Cache Information",
+        color=disnake.Color.blue()
+    )
+    
+    embed.add_field(name="Cache Size", value=f"{total_size/1024/1024:.2f} MB / {cache_limit/1024/1024:.2f} MB", inline=False)
+    embed.add_field(name="Usage", value=f"{(total_size/cache_limit)*100:.1f}%", inline=True)
+    embed.add_field(name="Files Cached", value=str(file_count), inline=True)
+    
+    if recent_files:
+        embed.add_field(name="Recently Cached Songs", value="\n".join([f"{i+1}. {file.hash}" for i, file in enumerate(recent_files)]), inline=False)
+    
+    return embed
+
+def create_music_stats_embed(bot) -> disnake.Embed:
+    """Create an embed with music playback statistics"""
+    # Initialize counters
+    total_queued_songs = 0
+    total_playing = 0
+    guilds_with_music = 0
+    most_songs_guild = {"id": None, "count": 0, "name": "None"}
+    
+    # Gather stats from all players
+    for guild_id, player in bot.player_manager.players.items():
+        guild = bot.get_guild(int(guild_id))
+        guild_name = guild.name if guild else f"Unknown ({guild_id})"
+        
+        # Count current queue size
+        queue_size = len(player.queue)
+        total_queued_songs += queue_size
+        
+        # Track guild with most songs
+        if queue_size > most_songs_guild["count"]:
+            most_songs_guild = {
+                "id": guild_id,
+                "count": queue_size,
+                "name": guild_name
+            }
+        
+        # Count playing status
+        if player.get_current():
+            total_playing += 1
+            guilds_with_music += 1
+    
+    # Create embed
+    embed = disnake.Embed(
+        title="Music Playback Statistics",
+        color=disnake.Color.purple()
+    )
+    
+    embed.add_field(name="Active Music Sessions", value=str(guilds_with_music), inline=True)
+    embed.add_field(name="Total Songs in Queues", value=str(total_queued_songs), inline=True)
+    embed.add_field(name="Currently Playing", value=str(total_playing), inline=True)
+    
+    if most_songs_guild["id"]:
+        embed.add_field(
+            name="Server with Largest Queue", 
+            value=f"{most_songs_guild['name']}: {most_songs_guild['count']} songs", 
+            inline=False
+        )
     
     return embed

@@ -7,3 +7,4 @@ spotipy
 httpx
 sqlalchemy
 aiosqlite
+psutil

@@ -8,16 +8,15 @@ from typing import List, Dict, Any, Optional, Tuple, Union
 import aiohttp
 
 from ..config import Config
-from ..services.key_value_cache import KeyValueCache
+from ..services.key_value_cache import KeyValueCache, ONE_HOUR_IN_SECONDS, TEN_MINUTES_IN_SECONDS, ONE_MINUTE_IN_SECONDS
+from ..services.api_queue import AsyncRequestQueue
 
 logger = logging.getLogger(__name__)
 
-# Constants
-ONE_HOUR_IN_SECONDS = 60 * 60
-ONE_MINUTE_IN_SECONDS = 60
-
 # Initialize cache
 key_value_cache = KeyValueCache()
+# Initialize API request queue
+request_queue = AsyncRequestQueue(concurrency=4)
 
 async def search_youtube(
     query: str,
@@ -42,6 +41,22 @@ async def search_youtube(
         logger.debug(f"YouTube search cache hit: {query}")
         return json.loads(cached)
     
+    # Use the queue to limit API concurrency
+    return await request_queue.add(
+        _search_youtube_impl, 
+        query, 
+        should_split_chapters, 
+        api_key,
+        cache_key
+    )
+
+async def _search_youtube_impl(
+    query: str, 
+    should_split_chapters: bool, 
+    api_key: str,
+    cache_key: str
+) -> List[Dict[str, Any]]:
+    """Implementation of YouTube search with API call"""
     try:
         # Search for videos
         async with aiohttp.ClientSession() as session:
@@ -133,6 +148,22 @@ async def get_youtube_video(
         logger.debug(f"YouTube video cache hit: {video_id}")
         return json.loads(cached)
     
+    # Use the queue to limit API concurrency
+    return await request_queue.add(
+        _get_youtube_video_impl,
+        video_id,
+        should_split_chapters,
+        api_key,
+        cache_key
+    )
+
+async def _get_youtube_video_impl(
+    video_id: str,
+    should_split_chapters: bool,
+    api_key: str,
+    cache_key: str
+) -> List[Dict[str, Any]]:
+    """Implementation of video metadata retrieval"""
     try:
         # Get video details
         video = await get_video_details(video_id, api_key)
@@ -191,6 +222,22 @@ async def get_youtube_playlist(
         logger.debug(f"YouTube playlist cache hit: {playlist_id}")
         return json.loads(cached)
     
+    # Use the queue to limit API concurrency
+    return await request_queue.add(
+        _get_youtube_playlist_impl,
+        playlist_id,
+        should_split_chapters,
+        api_key,
+        cache_key
+    )
+
+async def _get_youtube_playlist_impl(
+    playlist_id: str,
+    should_split_chapters: bool,
+    api_key: str,
+    cache_key: str
+) -> List[Dict[str, Any]]:
+    """Implementation of playlist retrieval"""
     try:
         # Get playlist details first
         async with aiohttp.ClientSession() as session:
@@ -286,7 +333,7 @@ async def get_youtube_playlist(
                         metadata = format_video_metadata(video, playlist_obj)
                         results.append(metadata)
             
-            # Cache the result
+            # Cache the result - using short TTL as playlists change frequently
             await key_value_cache.set(
                 cache_key,
                 json.dumps(results),
@@ -301,6 +348,12 @@ async def get_youtube_playlist(
 
 async def get_video_details(video_id: str, api_key: str) -> Optional[Dict[str, Any]]:
     """Get detailed information about a YouTube video"""
+    # Try to get from cache with 1 hour TTL
+    cache_key = f"youtube_video_details:{video_id}"
+    cached = await key_value_cache.get(cache_key)
+    if cached:
+        return json.loads(cached)
+    
     async with aiohttp.ClientSession() as session:
         params = {
             'part': 'snippet,contentDetails,statistics',
@@ -320,30 +373,64 @@ async def get_video_details(video_id: str, api_key: str) -> Optional[Dict[str, A
         if not data.get('items'):
             return None
         
-        return data['items'][0]
+        result = data['items'][0]
+        
+        # Cache the video details
+        await key_value_cache.set(
+            cache_key,
+            json.dumps(result),
+            ONE_HOUR_IN_SECONDS
+        )
+        
+        return result
 
 async def get_videos_details(video_ids: List[str], api_key: str) -> List[Dict[str, Any]]:
     """Get detailed information about multiple YouTube videos"""
     if not video_ids:
         return []
     
-    async with aiohttp.ClientSession() as session:
-        params = {
-            'part': 'snippet,contentDetails,statistics',
-            'id': ','.join(video_ids),
-            'key': api_key
-        }
+    # Batch the video IDs to avoid URL length limitations
+    batch_size = 50  # YouTube API maximum
+    batches = [video_ids[i:i+batch_size] for i in range(0, len(video_ids), batch_size)]
+    
+    results = []
+    for batch in batches:
+        # Create a cache key for this batch
+        batch_key = f"youtube_videos_batch:{','.join(batch)}"
+        cached = await key_value_cache.get(batch_key)
         
-        async with session.get(
-            'https://www.googleapis.com/youtube/v3/videos',
-            params=params
-        ) as response:
-            if response.status != 200:
-                return []
+        if cached:
+            results.extend(json.loads(cached))
+            continue
+        
+        # Need to fetch this batch
+        async with aiohttp.ClientSession() as session:
+            params = {
+                'part': 'snippet,contentDetails,statistics',
+                'id': ','.join(batch),
+                'key': api_key
+            }
             
-            data = await response.json()
-        
-        return data.get('items', [])
+            async with session.get(
+                'https://www.googleapis.com/youtube/v3/videos',
+                params=params
+            ) as response:
+                if response.status != 200:
+                    continue
+                
+                data = await response.json()
+            
+            batch_results = data.get('items', [])
+            results.extend(batch_results)
+            
+            # Cache this batch
+            await key_value_cache.set(
+                batch_key,
+                json.dumps(batch_results),
+                ONE_HOUR_IN_SECONDS
+            )
+    
+    return results
 
 async def process_video_chapters(
     video: Dict[str, Any],
@@ -561,6 +648,12 @@ async def get_youtube_suggestions(query: str) -> List[str]:
         return []
             
     try:
+        # Try to get from cache first
+        cache_key = f"youtube_suggestions:{query}"
+        cached = await key_value_cache.get(cache_key)
+        if cached:
+            return json.loads(cached)
+        
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://suggestqueries.google.com/complete/search",
@@ -586,17 +679,34 @@ async def get_youtube_suggestions(query: str) -> List[str]:
                         text = text[text.index("(")+1:text.rindex(")")]
                     
                     data = json.loads(text)
+                    suggestions = []
                     if isinstance(data, list) and len(data) > 1:
-                        return data[1]  # Second element contains suggestions array
+                        suggestions = data[1]  # Second element contains suggestions array
+                    
+                    # Cache the suggestions with 10 minute TTL
+                    await key_value_cache.set(
+                        cache_key,
+                        json.dumps(suggestions),
+                        TEN_MINUTES_IN_SECONDS
+                    )
+                    
+                    return suggestions
                 except json.JSONDecodeError:
                     # Fallback: Try regex extraction
                     import re
                     suggestions = []
                     matches = re.findall(r'"([^"]+)"', text)
                     if matches and len(matches) > 1:
-                        return matches[1:]  # Skip the first match (query)
+                        suggestions = matches[1:]  # Skip the first match (query)
                     
-                return []
+                    # Cache the suggestions with 10 minute TTL
+                    await key_value_cache.set(
+                        cache_key,
+                        json.dumps(suggestions),
+                        TEN_MINUTES_IN_SECONDS
+                    )
+                    
+                    return suggestions
     except Exception as e:
         logger.error(f"Error getting YouTube suggestions: {e}")
         return []

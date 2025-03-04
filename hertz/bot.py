@@ -126,6 +126,11 @@ class HertzBot(commands.InteractionBot):
                                 logger.warning(f"Voice client state mismatch in guild {guild_id}, fixing")
                                 player.status = player.Status.IDLE
                     
+                    # Update the health status file
+                    with open('/data/health_status', 'w') as f:
+                        import time
+                        f.write(str(int(time.time())))
+                    
                     # Wait for next check
                     await asyncio.sleep(60)  # Check every minute
                 except Exception as e:
@@ -141,7 +146,7 @@ class HertzBot(commands.InteractionBot):
             logger.info("Starting to load cogs...")
             
             # Import cog modules
-            from .cogs import music, queue, playback, favorites, config, cache
+            from .cogs import music, queue, playback, favorites, config, cache, health
             
             # Add cogs with detailed logging
             self.add_cog(music.MusicCommands(self))
@@ -161,6 +166,9 @@ class HertzBot(commands.InteractionBot):
             
             self.add_cog(cache.CacheCommands(self))
             logger.info("Added cache commands cog")
+            
+            self.add_cog(health.HealthCommands(self))
+            logger.info("Added health commands cog")
             
             # Log registered commands
             all_commands = []
@@ -191,21 +199,43 @@ class HertzBot(commands.InteractionBot):
         logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
         
         try:
+            # Create settings for the guild
             from .db.client import get_guild_settings
             await get_guild_settings(str(guild.id))
             
-            # Try to send a welcome message to the guild owner
-            if guild.owner:  # Check if owner exists before sending
-                embed = disnake.Embed(
-                    title="Thanks for adding HERTZ!",
-                    description=(
-                        "👋 Hi! Someone (probably you) just invited me to a server you own. "
-                        "By default, I'm usable by all guild members in all guild channels. "
-                        "Use `/config` commands to configure my behavior."
-                    ),
-                    color=disnake.Color.blue()
-                )
-                await guild.owner.send(embed=embed)
+            # Try to send welcome message to the guild owner
+            if guild.owner:
+                try:
+                    embed = disnake.Embed(
+                        title="Thanks for adding HERTZ!",
+                        description=(
+                            "👋 Hi! Someone (probably you) just invited me to a server you own. "
+                            "By default, I'm usable by all guild members in all guild channels. "
+                            "Use `/config` commands to configure my behavior."
+                        ),
+                        color=disnake.Color.blue()
+                    )
+                    await guild.owner.send(embed=embed)
+                except disnake.Forbidden:
+                    logger.info(f"Could not DM owner of {guild.name} - their privacy settings prevent DMs")
+                    
+                    # Alternative: Try to find a system channel or general channel to post welcome message
+                    welcome_channel = guild.system_channel or next((c for c in guild.text_channels if c.name.lower() in ["general", "welcome", "chat"]), None)
+                    
+                    if welcome_channel and welcome_channel.permissions_for(guild.me).send_messages:
+                        try:
+                            server_embed = disnake.Embed(
+                                title="Thanks for adding HERTZ!",
+                                description=(
+                                    "👋 Hi! Thanks for adding me to your server!\n"
+                                    "Use `/play` to start playing music and `/help` to see all commands.\n"
+                                    "Server admins can use `/config` to customize my behavior."
+                                ),
+                                color=disnake.Color.blue()
+                            )
+                            await welcome_channel.send(embed=server_embed)
+                        except Exception as e:
+                            logger.info(f"Could not send welcome message to channel: {e}")
             else:
                 logger.warning(f"Could not find owner for guild: {guild.name}")
         except Exception as e:

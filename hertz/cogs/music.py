@@ -1,6 +1,7 @@
 # hertz/cogs/music.py
 import logging
 import re
+import urllib.parse
 from typing import List, Dict, Any, Optional
 
 import disnake
@@ -160,10 +161,14 @@ class MusicCommands(commands.Cog):
             return []
             
         # Check if query looks like a URL
-        if re.match(r'^\w+://', query):
-            # It's a URL, don't provide autocomplete
-            return []
-            
+        try:
+            result = urllib.parse.urlparse(query)
+            if all([result.scheme, result.netloc]):
+                # It's a URL, don't provide autocomplete
+                return []
+        except Exception:
+            pass
+        
         # Get suggestions from YouTube
         try:
             from ..services.youtube import get_youtube_suggestions
