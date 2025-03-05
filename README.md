@@ -2,63 +2,63 @@
   <img src="https://i.imgur.com/nbsaNJu.png" alt="HERTZ Logo" width="250"/>
 </p>
 
-<h1 align="center">HERTZ - Discord Music Bot</h1>
+<h1 align="center">HERTZ - Professional Discord Audio Broadcasting</h1>
 
 <p align="center">
-  A powerful, feature-rich Discord music bot for playing music from YouTube, Spotify, and other sources in your Discord server voice channels.
+  A powerful, feature-rich Discord audio transmission system for broadcasting music from YouTube, Spotify, and other sources across your Discord server voice channels.
   <br>
-  HERTZ is a Python-based rewrite of the popular <a href="https://github.com/codetheweb/muse">muse</a> bot with enhanced features and improved stability.
+  HERTZ is a Python-based evolution of the popular <a href="https://github.com/codetheweb/muse">muse</a> bot with enhanced features and professional-grade audio delivery.
 </p>
 
-## Features
+## 📡 Transmission Capabilities
 
-- **Multiple Music Sources**:
-  - YouTube videos and playlists with search and autocomplete
-  - Spotify tracks, albums, playlists, and artists
-  - Direct HTTP stream links
+- **Multiple Signal Sources**:
+  - YouTube video and playlist transmission with search and autocomplete
+  - Spotify tracks, albums, playlists, and artists integration
+  - Direct HTTP stream broadcasting
   
-- **Advanced Playback Controls**:
-  - Seamless play/pause/resume functionality
-  - Precise seeking within tracks (`/seek`, `/fseek`)
-  - Track looping and queue looping (`/loop`, `/loop-queue`)
-  - Dynamic volume control with automatic adjustment during voice chat
-  - Skip forward/backward in queue history
+- **Professional Playback Controls**:
+  - Precision audio control with play/pause/resume functionality
+  - Advanced seeking within tracks (`/seek`, `/fseek`)
+  - Track looping and queue looping capabilities (`/loop`, `/loop-queue`)
+  - Dynamic volume regulation with automatic adjustment during voice chat
+  - Navigate forward/backward in broadcast history
   
-- **Comprehensive Queue Management**:
-  - Intuitive queue display with pagination
+- **Broadcast Queue Management**:
+  - Intuitive playlist display with pagination
   - Shuffle, clear, and move functionality
-  - Smart track insertion (next or end of queue)
-  - Chapter splitting for long videos
+  - Intelligent track insertion (front or end of queue)
+  - Chapter segmentation for long audio content
   
-- **User-Friendly Experience**:
-  - Slash commands with autocomplete suggestions
-  - Customizable favorites system for quick access to songs
-  - Embedded song information with progress bars
-  - Automatic song announcements
+- **Studio-Quality Interface**:
+  - Slash commands with intelligent autocomplete suggestions
+  - Frequency preset system for quick access to favorite tracks
+  - Embedded track information with dynamic progress indicators
+  - Automatic track announcements
   - Automatic volume reduction when people speak
   
-- **Server-Specific Configuration**:
+- **Station Configuration**:
   - Customizable playlist limits
   - Adjustable auto-disconnect timers
   - Default volume and queue page settings
   - Channel-specific behavior controls
   
-- **Performance Optimized**:
-  - Efficient file caching system
-  - Smart resource management
-  - Asynchronous operations for smooth playback
+- **Performance Engineering**:
+  - Efficient audio caching system
+  - Intelligent resource allocation
+  - Asynchronous operations for uninterrupted playback
 
-- **Robust Error Handling**:
-  - Automatic recovery from API failures
-  - Graceful handling of disconnections
-  - Detailed logging for troubleshooting
+- **Error Resilience**:
+  - Automatic recovery from API interruptions
+  - Smooth handling of connection issues
+  - Comprehensive logging for troubleshooting
 
-- **Health Monitoring**:
-  - Built-in health dashboard
+- **System Monitoring**:
+  - Built-in diagnostics dashboard
   - Performance metrics tracking
   - Cache statistics and management
 
-## Installation
+## 🛠️ Installation
 
 ### Prerequisites
 - Python 3.10+
@@ -97,7 +97,7 @@
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/hertz.git
+   git clone https://github.com/alarifgit/hertz.git
    cd hertz
    ```
 
@@ -113,71 +113,71 @@
    python -m hertz
    ```
 
-## Commands
+## 🎛️ Command Console
 
-HERTZ uses Discord's slash commands system. Here are the available commands:
+HERTZ uses Discord's slash commands system. Here are the available transmission controls:
 
-### Music Playback
+### Audio Playback
 
-- `/play <query> [immediate] [shuffle] [split] [skip]` - Play music from YouTube, Spotify, or a direct link
+- `/play <query> [immediate] [shuffle] [split] [skip]` - Broadcast audio from YouTube, Spotify, or a direct link
   - `immediate` - Add track to the front of the queue
-  - `shuffle` - Shuffle playlist items
-  - `split` - Split videos into chapters
+  - `shuffle` - Randomize playlist items
+  - `split` - Segment videos into chapters
   - `skip` - Skip the currently playing track
-- `/pause` - Pause the current song
-- `/resume` - Resume playback
-- `/skip [number]` - Skip one or more songs
-- `/next` - Skip to the next song (alias for /skip)
-- `/unskip` - Go back to the previous song
-- `/seek <time>` - Seek to position in the current song (e.g., "1:30", "90s")
-- `/fseek <time>` - Seek forward in the current song
-- `/replay` - Restart the current song
-- `/stop` - Stop playback, disconnect, and clear queue
+- `/pause` - Pause the current transmission
+- `/resume` - Continue playback
+- `/skip [number]` - Skip one or more tracks
+- `/next` - Skip to the next track (alias for /skip)
+- `/unskip` - Return to the previous track
+- `/seek <time>` - Navigate to position in the current track (e.g., "1:30", "90s")
+- `/fseek <time>` - Seek forward in the current track
+- `/replay` - Restart the current track
+- `/stop` - Halt transmission, disconnect, and clear queue
 - `/disconnect` - Disconnect from voice channel
 
 ### Queue Management
 
-- `/queue [page] [page-size]` - Display the current queue
-- `/clear` - Clear all songs except the current one
-- `/remove [position] [range]` - Remove songs from the queue
-- `/move <from> <to>` - Move song positions in the queue
-- `/shuffle` - Shuffle the current queue
-- `/loop` - Toggle looping the current song
-- `/loop-queue` - Toggle looping the entire queue
-- `/now-playing` - Show the currently playing song
+- `/queue [page] [page-size]` - Display the active broadcast queue
+- `/clear` - Remove all tracks except the current one
+- `/remove [position] [range]` - Remove specific tracks from the queue
+- `/move <from> <to>` - Reposition tracks within the queue
+- `/shuffle` - Randomize the current queue
+- `/loop` - Toggle repeating the current track
+- `/loop-queue` - Toggle repeating the entire queue
+- `/now-playing` - Display the currently broadcasting track
 
-### Playback Settings
+### Audio Settings
 
-- `/volume <level>` - Set playback volume (0-100)
+- `/volume <level>` - Adjust broadcast volume (0-100)
 
-### Favorites
+### Frequency Presets
 
-- `/favorites use <name> [immediate] [shuffle] [split] [skip]` - Play a saved favorite
-- `/favorites list` - List all favorites
-- `/favorites create <name> <query>` - Create a new favorite
-- `/favorites remove <name>` - Remove a favorite
+- `/favorites use <name> [immediate] [shuffle] [split] [skip]` - Load a saved frequency preset
+- `/favorites list` - Show all available presets
+- `/favorites create <name> <query>` - Save a new frequency preset
+- `/favorites remove <name>` - Delete a preset
 
 ### Configuration
 
-- `/config get` - Show all settings
+- `/config get` - Display all settings
 - `/config set-playlist-limit <limit>` - Set maximum tracks from playlists
-- `/config set-wait-after-queue-empties <delay>` - Set time before disconnecting
-- `/config set-leave-if-no-listeners <value>` - Set auto-leave when channel is empty
+- `/config set-wait-after-queue-empties <delay>` - Set time before auto-disconnecting
+- `/config set-leave-if-no-listeners <value>` - Configure behavior when channel is empty
 - `/config set-queue-add-response-hidden <value>` - Set visibility of responses
-- `/config set-auto-announce-next-song <value>` - Set auto-announcements
-- `/config set-default-volume <level>` - Set default volume
+- `/config set-auto-announce-next-song <value>` - Configure auto-announcements
+- `/config set-default-volume <level>` - Set default volume level
 - `/config set-default-queue-page-size <page-size>` - Set queue page size
-- `/config set-reduce-vol-when-voice <value>` - Toggle volume reduction when people speak
-- `/config set-reduce-vol-when-voice-target <volume>` - Set reduced volume level
+- `/config set-reduce-vol-when-voice <value>` - Configure volume reduction when people speak
+- `/config set-reduce-vol-when-voice-target <volume>` - Set voice priority reduced volume level
 
 ### System Commands
 
-- `/ping` - Check if the bot is responding
-- `/health` - Display bot health metrics
-- `/cache` - Show cache statistics
-- `/dashboard` - Interactive bot metrics dashboard
+- `/ping` - Verify signal connection status
+- `/health` - Display system diagnostic metrics
+- `/cache` - View cache statistics
+- `/dashboard` - Interactive station metrics dashboard
 
-## Configuration
+## ⚙️ Configuration
 
 HERTZ can be configured with the following environment variables:
 
@@ -195,24 +195,24 @@ HERTZ can be configured with the following environment variables:
 | `BOT_ACTIVITY` | Activity text | `music` |
 | `BOT_ACTIVITY_URL` | Activity URL (for STREAMING type) | - |
 
-## Health Monitoring
+## 📊 System Monitoring
 
-HERTZ includes built-in health monitoring to ensure stability:
+HERTZ includes built-in diagnostic tools to ensure reliable operation:
 
-- Automatically checks bot connectivity
-- Monitors voice client state consistency
-- Tracks memory and CPU usage
-- Implements health check file for container orchestration
+- Automatically monitors connection stability
+- Tracks voice client state consistency
+- Monitors resource utilization
+- Implements health checks for container orchestration
 - Provides `/health` and `/dashboard` commands for real-time metrics
 
-## License
+## 📝 License
 
 [MIT License](LICENSE)
 
-## Credits
+## 🎧 Credits
 
 HERTZ is inspired by [muse](https://github.com/codetheweb/muse), a TypeScript Discord music bot.
 
-## Contributors
+## 🔧 Contributors
 
 - CHAOSEN3
