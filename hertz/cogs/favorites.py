@@ -19,7 +19,7 @@ class FavoritesCommands(commands.Cog):
     
     @commands.slash_command(
         name="favorites",
-        description="Manage your favorite songs and playlists"
+        description="Manage your favorite tracks and playlists"
     )
     async def favorites_group(self, inter: ApplicationCommandInteraction):
         """Base command for favorites - never called directly"""
@@ -27,13 +27,13 @@ class FavoritesCommands(commands.Cog):
     
     @favorites_group.sub_command(
         name="use",
-        description="Play a favorite"
+        description="Play a favorite frequency"
     )
     async def use_favorite(
         self,
         inter: ApplicationCommandInteraction,
         name: str = commands.Param(
-            description="Name of the favorite",
+            description="Name of the favorite frequency",
             autocomplete=True
         ),
         immediate: bool = commands.Param(
@@ -87,7 +87,7 @@ class FavoritesCommands(commands.Cog):
     
     @favorites_group.sub_command(
         name="list",
-        description="List all favorites"
+        description="List all saved frequencies"
     )
     async def list_favorites(self, inter: ApplicationCommandInteraction):
         """List all favorites for this server"""
@@ -105,7 +105,7 @@ class FavoritesCommands(commands.Cog):
         # Create embed with favorites
         embed = disnake.Embed(
             title="🎵 Saved Frequencies",
-            description="Your favorite tracks and playlists",
+            description="Your preferred tracks and playlists",
             color=disnake.Color.blue()
         )
         
@@ -125,7 +125,7 @@ class FavoritesCommands(commands.Cog):
             ])
             
             embed.add_field(
-                name=f"<@{author_id}>'s Favorites",
+                name=f"<@{author_id}>'s Frequencies",
                 value=field_value,
                 inline=False
             )
@@ -135,13 +135,13 @@ class FavoritesCommands(commands.Cog):
     
     @favorites_group.sub_command(
         name="create",
-        description="Create a new favorite"
+        description="Save a new favorite frequency"
     )
     async def create_favorite(
         self,
         inter: ApplicationCommandInteraction,
         name: str = commands.Param(
-            description="Name for this favorite"
+            description="Name for this frequency preset"
         ),
         query: str = commands.Param(
             description="YouTube URL, Spotify URL, or search query"
@@ -167,20 +167,20 @@ class FavoritesCommands(commands.Cog):
             )
             
             logger.info(f"[COMMAND] {inter.author.display_name} created favorite '{name}'")
-            await inter.followup.send(Responses.FAVORITE_CREATED)
+            await inter.followup.send("💾 Frequency saved to presets! Ready for recall")
         except Exception as e:
             logger.error(f"[ERROR] Error creating favorite: {e}")
             await inter.followup.send(error_msg(str(e)))
     
     @favorites_group.sub_command(
         name="remove",
-        description="Remove a favorite"
+        description="Remove a saved frequency"
     )
     async def remove_favorite(
         self,
         inter: ApplicationCommandInteraction,
         name: str = commands.Param(
-            description="Name of the favorite to remove",
+            description="Name of the frequency to remove",
             autocomplete=True
         )
     ):
@@ -204,7 +204,7 @@ class FavoritesCommands(commands.Cog):
         try:
             await delete_favorite_query(favorite.id)
             logger.info(f"[COMMAND] {inter.author.display_name} removed favorite '{name}'")
-            await inter.followup.send(Responses.FAVORITE_REMOVED)
+            await inter.followup.send("🗑️ Frequency deleted from presets")
         except Exception as e:
             logger.error(f"[ERROR] Error removing favorite: {e}")
             await inter.followup.send(error_msg(str(e)))

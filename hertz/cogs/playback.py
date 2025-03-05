@@ -21,7 +21,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="pause",
-        description="Pause the current song"
+        description="Pause the current track"
     )
     async def pause(self, inter: ApplicationCommandInteraction):
         """Pause playback"""
@@ -78,13 +78,13 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="skip",
-        description="Skip the current song"
+        description="Skip the current track"
     )
     async def skip(
         self,
         inter: ApplicationCommandInteraction,
         number: int = commands.Param(
-            description="Number of songs to skip [default: 1]",
+            description="Number of tracks to skip [default: 1]",
             default=1,
             ge=1
         )
@@ -109,13 +109,13 @@ class PlaybackCommands(commands.Cog):
                     embed=create_playing_embed(player)
                 )
             else:
-                await inter.followup.send("Reached the end of the queue")
+                await inter.followup.send("📻 Reached the end of the queue")
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
     
     @commands.slash_command(
         name="next",
-        description="Skip to the next song (alias for /skip)"
+        description="Skip to the next track (alias for /skip)"
     )
     async def next(self, inter: ApplicationCommandInteraction):
         """Alias for /skip command"""
@@ -124,7 +124,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="unskip",
-        description="Go back to the previous song"
+        description="Go back to the previous track"
     )
     async def unskip(self, inter: ApplicationCommandInteraction):
         """Go back to the previous song in queue"""
@@ -149,7 +149,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="seek",
-        description="Seek to a position in the current song"
+        description="Seek to a position in the current track"
     )
     async def seek(
         self,
@@ -187,7 +187,7 @@ class PlaybackCommands(commands.Cog):
                 seek_time = parse_duration(time)
             
             if seek_time > current_song.length:
-                await inter.followup.send(error_msg("can't seek past the end of the song"))
+                await inter.followup.send(error_msg("can't seek past the end of the track"))
                 return
             
             logger.info(f"[COMMAND] {inter.author.display_name} seeked to {seek_time}s")
@@ -199,7 +199,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="fseek",
-        description="Seek forward in the current song"
+        description="Seek forward in the current track"
     )
     async def fseek(
         self,
@@ -236,7 +236,7 @@ class PlaybackCommands(commands.Cog):
             
             current_position = player.get_position()
             if current_position + forward_time > current_song.length:
-                await inter.followup.send(error_msg("can't seek past the end of the song"))
+                await inter.followup.send(error_msg("can't seek past the end of the track"))
                 return
             
             logger.info(f"[COMMAND] {inter.author.display_name} forward seeked by {forward_time}s")
@@ -248,7 +248,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="replay",
-        description="Restart the current song"
+        description="Restart the current track"
     )
     async def replay(self, inter: ApplicationCommandInteraction):
         """Restart the current song from the beginning"""
@@ -279,7 +279,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="loop",
-        description="Toggle looping the current song"
+        description="Toggle looping the current track"
     )
     async def loop(self, inter: ApplicationCommandInteraction):
         """Toggle looping the current song"""
@@ -293,7 +293,7 @@ class PlaybackCommands(commands.Cog):
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if player.status == player.Status.IDLE:
-            await inter.followup.send(error_msg("no song to loop!"))
+            await inter.followup.send(error_msg("no track to loop!"))
             return
         
         # Disable queue looping if enabled
@@ -303,7 +303,7 @@ class PlaybackCommands(commands.Cog):
         # Toggle song looping
         player.loop_current_song = not player.loop_current_song
         
-        logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_song else 'disabled'} song loop")
+        logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_song else 'disabled'} track loop")
         await inter.followup.send(
             Responses.LOOPING if player.loop_current_song else Responses.LOOP_STOPPED
         )
@@ -364,7 +364,7 @@ class PlaybackCommands(commands.Cog):
     
     @commands.slash_command(
         name="stop",
-        description="Stop playback, disconnect, and clear all songs"
+        description="Stop playback, disconnect, and clear all tracks"
     )
     async def stop(self, inter: ApplicationCommandInteraction):
         """Stop playback, disconnect, and clear the queue"""

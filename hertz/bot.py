@@ -195,51 +195,106 @@ class HertzBot(commands.InteractionBot):
         logger.info(f"Invite URL: https://discord.com/oauth2/authorize?client_id={self.user.id}&scope=bot%20applications.commands&permissions=277062449216")
     
     async def on_guild_join(self, guild: disnake.Guild):
-        """Handle the bot joining a new guild"""
+        """Handle the bot joining a new guild with improved owner detection"""
         logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
         
         try:
             # Create settings for the guild
             from .db.client import get_guild_settings
             await get_guild_settings(str(guild.id))
+            logger.info(f"Created settings for guild: {guild.name}")
             
-            # Try to send welcome message to the guild owner
-            if guild.owner:
+            # Find a suitable channel for welcoming if we can't reach the owner
+            welcome_channel = guild.system_channel or next((c for c in guild.text_channels if c.name.lower() in ["general", "welcome", "chat"]), None)
+            
+            # Attempt to explicitly fetch the guild owner
+            guild_owner = None
+            try:
+                # Try to get the owner through the owner_id
+                if guild.owner_id:
+                    logger.info(f"Attempting to fetch owner with ID: {guild.owner_id}")
+                    guild_owner = await guild.fetch_member(guild.owner_id)
+                    if guild_owner:
+                        logger.info(f"Successfully fetched owner: {guild_owner.name}#{guild_owner.discriminator}")
+                
+                # Fallback to the guild.owner property if the above fails
+                if not guild_owner and guild.owner:
+                    logger.info(f"Using guild.owner property")
+                    guild_owner = guild.owner
+            except Exception as owner_error:
+                logger.error(f"Error fetching guild owner: {str(owner_error)}")
+            
+            # Prepare the welcome embeds
+            owner_embed = disnake.Embed(
+                title="📡 HERTZ Broadcasting System - Now Online",
+                description=(
+                    "**🎛️ Studio Configuration Ready**\n\n"
+                    "Thank you for adding HERTZ to your server! Your audio transmission station is now online and ready for operation.\n\n"
+                    "**Quick Start Guide:**\n"
+                    "• Use `/play` to begin audio transmission\n"
+                    "• Use `/help` to see all available controls\n"
+                    "• Administrators can use `/config` to adjust broadcast parameters\n\n"
+                    "By default, all server members can control HERTZ in all channels. "
+                    "For professional operation, consider configuring channel-specific permissions."
+                ),
+                color=disnake.Color.blue()
+            )
+            
+            owner_embed.add_field(
+                name="📻 Signal Setup",
+                value="Join a voice channel and use `/play` to start your first transmission!",
+                inline=False
+            )
+            
+            owner_embed.add_field(
+                name="🔧 Technical Support",
+                value="If you experience signal interference, visit our support server or documentation.",
+                inline=False
+            )
+            
+            owner_embed.set_footer(text="HERTZ Audio Solutions - Professional Broadcasting for Discord")
+            
+            channel_embed = disnake.Embed(
+                title="📡 HERTZ Broadcasting System - Now Online",
+                description=(
+                    "**🎛️ Audio Transmission Station Ready**\n\n"
+                    "Thanks for adding HERTZ to your server! Your music broadcasting system is now online.\n\n"
+                    "• Use `/play` to start transmitting music\n"
+                    "• Administrators can use `/config` to adjust settings\n\n"
+                    "Join a voice channel to begin broadcasting!"
+                ),
+                color=disnake.Color.blue()
+            )
+            
+            # Try to send welcome message to the guild owner first
+            owner_dm_sent = False
+            if guild_owner:
                 try:
-                    embed = disnake.Embed(
-                        title="Thanks for adding HERTZ!",
-                        description=(
-                            "👋 Hi! Someone (probably you) just invited me to a server you own. "
-                            "By default, I'm usable by all guild members in all guild channels. "
-                            "Use `/config` commands to configure my behavior."
-                        ),
-                        color=disnake.Color.blue()
-                    )
-                    await guild.owner.send(embed=embed)
-                except disnake.Forbidden:
-                    logger.info(f"Could not DM owner of {guild.name} - their privacy settings prevent DMs")
-                    
-                    # Alternative: Try to find a system channel or general channel to post welcome message
-                    welcome_channel = guild.system_channel or next((c for c in guild.text_channels if c.name.lower() in ["general", "welcome", "chat"]), None)
-                    
-                    if welcome_channel and welcome_channel.permissions_for(guild.me).send_messages:
-                        try:
-                            server_embed = disnake.Embed(
-                                title="Thanks for adding HERTZ!",
-                                description=(
-                                    "👋 Hi! Thanks for adding me to your server!\n"
-                                    "Use `/play` to start playing music and `/help` to see all commands.\n"
-                                    "Server admins can use `/config` to customize my behavior."
-                                ),
-                                color=disnake.Color.blue()
-                            )
-                            await welcome_channel.send(embed=server_embed)
-                        except Exception as e:
-                            logger.info(f"Could not send welcome message to channel: {e}")
+                    await guild_owner.send(embed=owner_embed)
+                    logger.info(f"Welcome message sent to owner of {guild.name}")
+                    owner_dm_sent = True
+                except disnake.Forbidden as e:
+                    logger.warning(f"Could not DM owner of {guild.name} - their privacy settings prevent DMs: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error sending welcome message to owner of {guild.name}: {str(e)}")
             else:
                 logger.warning(f"Could not find owner for guild: {guild.name}")
+            
+            # If we couldn't DM the owner, try a channel instead
+            if not owner_dm_sent and welcome_channel and welcome_channel.permissions_for(guild.me).send_messages:
+                try:
+                    logger.info(f"Attempting to send welcome message to channel: {welcome_channel.name}")
+                    await welcome_channel.send(embed=channel_embed)
+                    logger.info(f"Welcome message sent to channel {welcome_channel.name} in {guild.name}")
+                except Exception as e:
+                    logger.error(f"Could not send welcome message to channel: {str(e)}")
+            elif not owner_dm_sent:
+                logger.warning(f"No suitable channel found to send welcome message in {guild.name}")
+            
         except Exception as e:
-            logger.error(f"Error in guild join handler: {e}")
+            logger.error(f"Error in guild join handler: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def on_voice_state_update(self, member: disnake.Member, before: disnake.VoiceState, after: disnake.VoiceState):
         """Handle voice state updates with improved error handling"""

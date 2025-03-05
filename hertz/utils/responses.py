@@ -7,19 +7,18 @@ class Responses:
     # Success messages
     TRACK_ADDED = "🎵 Signal received! Track added to queue"
     TRACKS_ADDED = "🎵 Signal received! {} tracks added to queue"
-    QUEUE_CLEARED = "🧹 Queue cleared. Channels silent."
+    QUEUE_CLEARED = "🧹 Playlist cleared. Channels silent."
     FAVORITE_CREATED = "💾 Frequency saved! Added to favorites"
     FAVORITE_REMOVED = "🗑️ Frequency deleted from favorites"
     TRACK_MOVED = "↕️ Track repositioned in queue"
-    VOLUME_SET = "🔊 Volume calibrated to {}%"
+    VOLUME_SET = "🔊 Audio levels calibrated to {}%"
     
     # Status messages
     PAUSED = "⏸️ Track paused. Signal on standby."
     RESUMED = "▶️ Signal live. Resuming transmission."
     SKIPPED = "⏭️ Signal forwarded to next track"
     PREVIOUS = "⏮️ Signal reversed to previous track"
-    LOOPING = "🔁 Signal loop enabled"
-    LOOPING_QUEUE = "🔄 Queue loop engaged"
+    LOOPING = "🔁 Track loop enabled"
     LOOP_STOPPED = "⏹️ Loop disengaged"
     QUEUE_LOOPING = "🔄 Queue loop enabled"
     QUEUE_LOOP_STOPPED = "⏹️ Queue loop disabled"

@@ -69,7 +69,7 @@ class QueueCommands(commands.Cog):
     
     @commands.slash_command(
         name="now-playing",
-        description="Show the currently playing song"
+        description="Show the currently playing track"
     )
     async def now_playing(self, inter: ApplicationCommandInteraction):
         """Show only the currently playing song without the full queue"""
@@ -90,7 +90,7 @@ class QueueCommands(commands.Cog):
     
     @commands.slash_command(
         name="clear",
-        description="Clear all songs in queue except the currently playing song"
+        description="Clear all tracks in queue except the currently playing track"
     )
     async def clear(self, inter: ApplicationCommandInteraction):
         """Clear the queue but keep the current song"""
@@ -109,18 +109,18 @@ class QueueCommands(commands.Cog):
     
     @commands.slash_command(
         name="remove",
-        description="Remove songs from the queue"
+        description="Remove tracks from the queue"
     )
     async def remove(
         self,
         inter: ApplicationCommandInteraction,
         position: int = commands.Param(
-            description="Position of the song to remove [default: 1]",
+            description="Position of the track to remove [default: 1]",
             default=1,
             ge=1
         ),
         range: int = commands.Param(
-            description="Number of songs to remove [default: 1]",
+            description="Number of tracks to remove [default: 1]",
             default=1,
             ge=1
         )
@@ -147,19 +147,19 @@ class QueueCommands(commands.Cog):
     
     @commands.slash_command(
         name="move",
-        description="Move a song to a different position in the queue"
+        description="Move a track to a different position in the queue"
     )
     async def move(
         self,
         inter: ApplicationCommandInteraction,
         from_pos: int = commands.Param(
             name="from",
-            description="Position of the song to move",
+            description="Position of the track to move",
             ge=1
         ),
         to_pos: int = commands.Param(
             name="to",
-            description="Position to move the song to",
+            description="Position to move the track to",
             ge=1
         )
     ):
@@ -198,7 +198,7 @@ class QueueCommands(commands.Cog):
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if player.is_queue_empty():
-            await inter.followup.send(error_msg("not enough songs to shuffle"))
+            await inter.followup.send(error_msg("not enough tracks to shuffle"))
             return
         
         logger.info(f"[COMMAND] {inter.author.display_name} shuffled the queue")
@@ -221,11 +221,11 @@ class QueueCommands(commands.Cog):
         player = self.bot.player_manager.get_player(inter.guild.id)
         
         if player.status == player.Status.IDLE:
-            await inter.followup.send(error_msg("no songs to loop!"))
+            await inter.followup.send(error_msg("no tracks to loop!"))
             return
         
         if player.queue_size() < 1:
-            await inter.followup.send(error_msg("not enough songs to loop a queue!"))
+            await inter.followup.send(error_msg("not enough tracks to loop a queue!"))
             return
         
         # Disable song looping if enabled

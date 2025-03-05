@@ -82,7 +82,7 @@ class MusicCommands(commands.Cog):
             )
             
             if not new_songs:
-                await inter.followup.send(error_msg("no songs found"), ephemeral=True)
+                await inter.followup.send(error_msg("no tracks found"), ephemeral=True)
                 return
                 
             # Shuffle if requested
@@ -134,7 +134,7 @@ class MusicCommands(commands.Cog):
                     await player.forward(1)
                 except Exception as e:
                     logger.error(f"[ERROR] Skip failed: {str(e)}")
-                    await inter.followup.send(error_msg("no song to skip to"), ephemeral=True)
+                    await inter.followup.send(error_msg("no track to skip to"), ephemeral=True)
                     return
                     
             # Format response based on number of songs added
