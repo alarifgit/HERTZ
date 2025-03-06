@@ -5,7 +5,7 @@
 <h1 align="center">HERTZ - Professional Discord Audio Broadcasting</h1>
 
 <p align="center">
-  A powerful, feature-rich Discord audio transmission system for broadcasting music from YouTube, Spotify, and other sources across your Discord server voice channels.
+  A powerful, feature-rich Discord audio transmission system for broadcasting music from YouTube and Spotify across your Discord server voice channels.
   <br>
   HERTZ is a Python-based evolution of the popular <a href="https://github.com/codetheweb/muse">muse</a> bot with enhanced features and professional-grade audio delivery.
 </p>
