@@ -97,15 +97,15 @@ class FavoritesCommands(commands.Cog):
         favorites = await get_favorite_queries(str(inter.guild.id))
         
         if not favorites:
-            await inter.followup.send("📭 No saved frequencies found. Create favorites with `/favorites create`")
+            await inter.followup.send("📭 No saved favorites found. Add favorites with `/favorites create`")
             return
         
         logger.info(f"[COMMAND] {inter.author.display_name} listed favorites")
         
         # Create embed with favorites
         embed = disnake.Embed(
-            title="🎵 Saved Frequencies",
-            description="Your preferred tracks and playlists",
+            title="🎵 Saved Favorites",
+            description="Your favorite tracks and playlists",
             color=disnake.Color.blue()
         )
         
@@ -125,7 +125,7 @@ class FavoritesCommands(commands.Cog):
             ])
             
             embed.add_field(
-                name=f"<@{author_id}>'s Frequencies",
+                name=f"<@{author_id}>'s Favorites",
                 value=field_value,
                 inline=False
             )
@@ -167,7 +167,7 @@ class FavoritesCommands(commands.Cog):
             )
             
             logger.info(f"[COMMAND] {inter.author.display_name} created favorite '{name}'")
-            await inter.followup.send("💾 Frequency saved to presets! Ready for recall")
+            await inter.followup.send("💾 Track saved to favorites")
         except Exception as e:
             logger.error(f"[ERROR] Error creating favorite: {e}")
             await inter.followup.send(error_msg(str(e)))
@@ -204,7 +204,7 @@ class FavoritesCommands(commands.Cog):
         try:
             await delete_favorite_query(favorite.id)
             logger.info(f"[COMMAND] {inter.author.display_name} removed favorite '{name}'")
-            await inter.followup.send("🗑️ Frequency deleted from presets")
+            await inter.followup.send("🗑️ Track removed from favorites")
         except Exception as e:
             logger.error(f"[ERROR] Error removing favorite: {e}")
             await inter.followup.send(error_msg(str(e)))

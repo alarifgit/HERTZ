@@ -118,7 +118,6 @@ class MusicCommands(commands.Cog):
                     response = Responses.NOW_PLAYING.format(player.get_current().title)
                     
                 await inter.followup.send(
-                    content=response, 
                     embed=embed,
                     ephemeral=settings.queueAddResponseEphemeral
                 )

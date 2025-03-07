@@ -62,7 +62,7 @@ def create_playing_embed(player: Player) -> disnake.Embed:
     """Create an embed for the currently playing song"""
     current_song = player.get_current()
     if not current_song:
-        raise ValueError("No song is currently playing")
+        raise ValueError("No track is currently playing")
     
     from ..services.player import Status
     
@@ -72,7 +72,7 @@ def create_playing_embed(player: Player) -> disnake.Embed:
     embed.color = disnake.Color.from_rgb(88, 101, 242) if player.status == Status.PLAYING else disnake.Color.from_rgb(237, 66, 69)
     
     # More audio-themed titles
-    embed.title = "🎧 Now Transmitting" if player.status == Status.PLAYING else "⏸️ Signal Paused"
+    embed.title = "🎧 Now Playing" if player.status == Status.PLAYING else "⏸️ Playback Paused"
     
     # Description with song details and UI
     embed.description = (
@@ -112,11 +112,11 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     
     # Better title and color for queue
     if player.loop_current_song:
-        embed.title = "🔂 Signal Looping"
+        embed.title = "🔂 Track Looping" 
     elif player.loop_current_queue:
-        embed.title = "🔄 Playlist Looping" 
+        embed.title = "🔄 Queue Looping" 
     else:
-        embed.title = "📻 Audio Stream"
+        embed.title = "📻 Music Queue"
         
     # Updated color scheme
     embed.color = disnake.Color.from_rgb(88, 101, 242) if player.status == Status.PLAYING else disnake.Color.from_rgb(153, 170, 181)
@@ -156,7 +156,7 @@ def create_queue_embed(player: Player, page: int = 1, page_size: int = 10) -> di
     
     return embed
 
-# Create a health embed with the HERTZ personality
+# Create a health embed with a professional style
 def create_health_embed(bot) -> disnake.Embed:
     """Create an embed with bot health metrics"""
     process = psutil.Process(os.getpid())
@@ -187,19 +187,19 @@ def create_health_embed(bot) -> disnake.Embed:
             seconds_since_update = now - timestamp
             last_update = f"{seconds_since_update} seconds ago"
     
-    # Create embed with audio-themed styling
+    # Create embed with music-themed styling
     embed = disnake.Embed(
-        title="📡 System Status Monitor",
-        description="Current HERTZ broadcast metrics",
+        title="📊 System Status",
+        description="Current HERTZ performance metrics",
         color=disnake.Color.from_rgb(88, 101, 242)
     )
     
-    # Signal strength indicator based on health
-    signal_strength = "▁▂▃▄▅▆▇█"  # Full strength
+    # Health indicator based on status
+    health_indicator = "▁▂▃▄▅▆▇█"  # Full health
     
-    embed.add_field(name="🟢 Signal Strength", value=signal_strength, inline=False)
+    embed.add_field(name="🟢 Health Status", value=health_indicator, inline=False)
     embed.add_field(name="⏱️ Uptime", value=uptime, inline=True)
-    embed.add_field(name="🔄 Last Heartbeat", value=last_update, inline=True)
+    embed.add_field(name="🔄 Last Check", value=last_update, inline=True)
     embed.add_field(name="📡 Connected Servers", value=str(len(bot.guilds)), inline=True)
     
     # Add some system stats
@@ -210,7 +210,7 @@ def create_health_embed(bot) -> disnake.Embed:
     
     # Add active voice connections
     voice_connections = sum(1 for guild in bot.guilds if guild.voice_client is not None)
-    embed.add_field(name="🎧 Active Streams", value=str(voice_connections), inline=True)
+    embed.add_field(name="🎧 Active Connections", value=str(voice_connections), inline=True)
     
     return embed
 
@@ -229,7 +229,7 @@ async def create_cache_embed(bot) -> disnake.Embed:
     # Get recent cached songs
     recent_files = await get_recent_file_caches(5)
     
-    # Create embed with audio-themed styling
+    # Create embed with music-themed styling
     embed = disnake.Embed(
         title="💽 Audio Cache Status",
         description="Current track storage information",
@@ -289,14 +289,14 @@ def create_music_stats_embed(bot) -> disnake.Embed:
             total_playing += 1
             guilds_with_music += 1
     
-    # Create embed with audio-themed styling
+    # Create embed with professional styling
     embed = disnake.Embed(
-        title="🎛️ Audio Dashboard",
-        description="Current broadcast statistics",
+        title="🎛️ Music Dashboard",
+        description="Current playback statistics",
         color=disnake.Color.from_rgb(88, 101, 242)
     )
     
-    embed.add_field(name="🎧 Active Streams", value=str(guilds_with_music), inline=True)
+    embed.add_field(name="🎧 Active Sessions", value=str(guilds_with_music), inline=True)
     embed.add_field(name="🎵 Queued Tracks", value=str(total_queued_songs), inline=True)
     embed.add_field(name="▶️ Now Playing", value=str(total_playing), inline=True)
     

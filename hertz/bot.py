@@ -28,7 +28,7 @@ class HertzBot(commands.InteractionBot):
         self.players = self.player_manager.players  # Reference to players dictionary for health checks
         
         # Use your server ID for test_guilds (faster command registration)
-        test_guilds = None
+        test_guilds = config.TEST_GUILDS if hasattr(config, 'TEST_GUILDS') else None
         
         super().__init__(
             intents=intents,
@@ -224,44 +224,45 @@ class HertzBot(commands.InteractionBot):
             except Exception as owner_error:
                 logger.error(f"Error fetching guild owner: {str(owner_error)}")
             
-            # Prepare the welcome embeds
+            # Create the welcome embeds
             owner_embed = disnake.Embed(
-                title="📡 HERTZ Broadcasting System - Now Online",
+                title="🎵 HERTZ Music Bot - Now Online",
                 description=(
-                    "**🎛️ Studio Configuration Ready**\n\n"
-                    "Thank you for adding HERTZ to your server! Your audio transmission station is now online and ready for operation.\n\n"
-                    "**Quick Start Guide:**\n"
-                    "• Use `/play` to begin audio transmission\n"
-                    "• Use `/help` to see all available controls\n"
-                    "• Administrators can use `/config` to adjust broadcast parameters\n\n"
-                    "By default, all server members can control HERTZ in all channels. "
-                    "For professional operation, consider configuring channel-specific permissions."
+                    "**Ready to Play Music**\n\n"
+                    "Thank you for adding HERTZ to your server! Your music bot is now online and ready to play.\n\n"
+                    "**Quick Start:**\n"
+                    "• Use `/play` to start playing music\n"
+                    "• Use `/help` to see all available commands\n"
+                    "• Administrators can use `/config` to adjust settings\n\n"
+                    "By default, all server members can use HERTZ in all channels. "
+                    "You can adjust permissions through Discord's role settings."
                 ),
                 color=disnake.Color.blue()
             )
             
             owner_embed.add_field(
-                name="📻 Signal Setup",
-                value="Join a voice channel and use `/play` to start your first transmission!",
+                name="🎧 Getting Started",
+                value="Join a voice channel and use `/play` to start listening!",
                 inline=False
             )
             
             owner_embed.add_field(
-                name="🔧 Technical Support",
-                value="If you experience signal interference, visit our support server or documentation.",
+                name="🔧 Need Help?",
+                value="If you need assistance, use the `/help` command or visit our documentation.",
                 inline=False
             )
             
-            owner_embed.set_footer(text="HERTZ Audio Solutions - Professional Broadcasting for Discord")
+            owner_embed.set_footer(text="HERTZ - Professional Music Bot for Discord")
             
+            # Simplified embed for text channels
             channel_embed = disnake.Embed(
-                title="📡 HERTZ Broadcasting System - Now Online",
+                title="🎵 HERTZ Music Bot - Now Online",
                 description=(
-                    "**🎛️ Audio Transmission Station Ready**\n\n"
-                    "Thanks for adding HERTZ to your server! Your music broadcasting system is now online.\n\n"
-                    "• Use `/play` to start transmitting music\n"
+                    "**Ready to Play Music**\n\n"
+                    "Thanks for adding HERTZ to your server! Your music bot is now online.\n\n"
+                    "• Use `/play` to start playing music\n"
                     "• Administrators can use `/config` to adjust settings\n\n"
-                    "Join a voice channel to begin broadcasting!"
+                    "Join a voice channel to begin listening!"
                 ),
                 color=disnake.Color.blue()
             )
