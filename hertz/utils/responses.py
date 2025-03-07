@@ -1,39 +1,39 @@
 # hertz/utils/responses.py
-"""Response messages for HERTZ with professional, music-focused terminology"""
+"""Custom response messages with HERTZ audio-engineer personality"""
 
 class Responses:
     """Container for HERTZ response messages"""
     
     # Success messages
-    TRACK_ADDED = "🎵 Track added to queue"
-    TRACKS_ADDED = "🎵 {} tracks added to queue"
-    QUEUE_CLEARED = "🧹 Playlist cleared"
-    FAVORITE_CREATED = "💾 Track saved to favorites"
-    FAVORITE_REMOVED = "🗑️ Track removed from favorites"
+    TRACK_ADDED = "🎵 Signal received! Track added to queue"
+    TRACKS_ADDED = "🎵 Signal received! {} tracks added to queue"
+    QUEUE_CLEARED = "🧹 Playlist cleared. Channels silent."
+    FAVORITE_CREATED = "💾 Frequency saved! Added to favorites"
+    FAVORITE_REMOVED = "🗑️ Frequency deleted from favorites"
     TRACK_MOVED = "↕️ Track repositioned in queue"
-    VOLUME_SET = "🔊 Volume set to {}%"
+    VOLUME_SET = "🔊 Audio levels calibrated to {}%"
     
     # Status messages
-    PAUSED = "⏸️ Playback paused"
-    RESUMED = "▶️ Playback resumed"
-    SKIPPED = "⏭️ Skipped to next track"
-    PREVIOUS = "⏮️ Returned to previous track"
+    PAUSED = "⏸️ Track paused. Signal on standby."
+    RESUMED = "▶️ Signal live. Resuming transmission."
+    SKIPPED = "⏭️ Signal forwarded to next track"
+    PREVIOUS = "⏮️ Signal reversed to previous track"
     LOOPING = "🔁 Track loop enabled"
-    LOOP_STOPPED = "⏹️ Track loop disabled"
+    LOOP_STOPPED = "⏹️ Loop disengaged"
     QUEUE_LOOPING = "🔄 Queue loop enabled"
     QUEUE_LOOP_STOPPED = "⏹️ Queue loop disabled"
-    SHUFFLED = "🔀 Queue shuffled"
-    SEEKED = "⏩ Seeked to {}"
+    SHUFFLED = "🔀 Playlist frequencies randomized"
+    SEEKED = "⏩ Signal seeked to {}"
     REPLAYED = "🔄 Restarting current track"
-    DISCONNECTED = "🔌 Disconnected from voice channel"
-    STOPPED = "⏹️ Playback stopped and queue cleared"
+    DISCONNECTED = "🔌 Connection terminated. Signal offline."
+    STOPPED = "⏹️ Playback terminated. All channels cleared."
     
     # Configuration messages
-    CONFIG_UPDATED = "⚙️ Settings updated: {}"
+    CONFIG_UPDATED = "⚙️ Configuration updated: {}"
     
     # Playback messages for song advancement
-    NOW_PLAYING = "🎧 Now playing: {}"
-    NEXT_TRACK = "⏭️ Up next: {}"
+    NOW_PLAYING = "🎧 Now transmitting: {}"
+    NEXT_TRACK = "⏭️ Next in queue: {}"
     
     @staticmethod
     def track_added(title: str, position: str = "", extra: str = "", skipped: bool = False) -> str:
@@ -42,7 +42,7 @@ class Responses:
         skip_text = " and current track skipped" if skipped else ""
         extra_text = f" ({extra})" if extra else ""
         
-        return f"🎵 **{title}** added{position_text} the queue{skip_text}{extra_text}"
+        return f"🎵 Signal received! **{title}** added{position_text} the queue{skip_text}{extra_text}"
     
     @staticmethod
     def tracks_added(first_title: str, count: int, position: str = "", extra: str = "", skipped: bool = False) -> str:
@@ -51,4 +51,4 @@ class Responses:
         skip_text = " and current track skipped" if skipped else ""
         extra_text = f" ({extra})" if extra else ""
         
-        return f"🎵 **{first_title}** and {count} other tracks added{position_text} the queue{skip_text}{extra_text}"
+        return f"🎵 Signal received! **{first_title}** and {count} other tracks added{position_text} the queue{skip_text}{extra_text}"
