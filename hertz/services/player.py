@@ -128,11 +128,16 @@ class Player:
             if "source" in song and isinstance(song["source"], int):
                 song["source"] = MediaSource(song["source"])
             song = QueuedSong(**song)
-            
+        
+        # **FIX**: If queue is completely empty, reset position to 0
+        if len(self.queue) == 0:
+            self.queue_position = 0
+            logger.debug("[QUEUE] Empty queue detected, reset position to 0")
+        
         if song.playlist or not immediate:
             # Add to end of queue
             self.queue.append(song)
-            logger.debug(f"[QUEUE] Added '{song.title}' to end of queue")
+            logger.debug(f"[QUEUE] Added '{song.title}' to end of queue (position {len(self.queue) - 1})")
         else:
             # Add as next song
             insert_at = self.queue_position + 1
@@ -263,42 +268,49 @@ class Player:
         if self.disconnect_timer:
             self.disconnect_timer.cancel()
             self.disconnect_timer = None
-                
-        # Determine if we're resuming the same song
-        same_song = current_song.url == self.last_song_url
-        has_position = self.position_in_seconds > 0
         
-        if same_song and has_position:
-            current_position = self.position_in_seconds
-            logger.info(f"[PLAYBACK] Resuming '{current_song.title}' from position {current_position}s")
-            
-            # Case 1: Just paused, can directly resume
-            if self.status == Status.PAUSED and self.voice_client.is_paused():
-                logger.debug("[PLAYBACK] Direct resume from pause")
-                self.voice_client.resume()
-                self.status = Status.PLAYING
-                self._start_position_tracking()
-                self._notify_playback_event("resume", song=current_song)
-                return
-                
-            # Case 2: Reconnecting or any other state
-            if not current_song.is_live:  # Can't seek in livestreams
-                logger.debug(f"[PLAYBACK] Seeking to position {current_position}s after reconnection")
-                # Store status temporarily to prevent position reset in seek
-                temp_status = self.status
-                try:
-                    await self.seek(current_position)
-                    self.status = Status.PLAYING
-                    return
-                except Exception as e:
-                    logger.error(f"[ERROR] Resuming with seek failed: {e}")
-                    # Continue with normal playback as fallback
-                    self.status = temp_status
+        # **FIX**: If coming from IDLE state, treat as new playback
+        if self.status == Status.IDLE:
+            logger.info(f"[PLAYBACK] Starting fresh playback of '{current_song.title}' after IDLE")
+            # Reset tracking variables for clean start
+            self.position_in_seconds = 0
+            self.last_song_url = ""
+            # Continue with normal new song logic below
         else:
-            # New song playback
-            logger.info(f"[PLAYBACK] Starting '{current_song.title}'")
-        
+            # Determine if we're resuming the same song (existing logic)
+            same_song = current_song.url == self.last_song_url
+            has_position = self.position_in_seconds > 0
+            
+            if same_song and has_position:
+                current_position = self.position_in_seconds
+                logger.info(f"[PLAYBACK] Resuming '{current_song.title}' from position {current_position}s")
+                
+                # Case 1: Just paused, can directly resume
+                if self.status == Status.PAUSED and self.voice_client.is_paused():
+                    logger.debug("[PLAYBACK] Direct resume from pause")
+                    self.voice_client.resume()
+                    self.status = Status.PLAYING
+                    self._start_position_tracking()
+                    self._notify_playback_event("resume", song=current_song)
+                    return
+                    
+                # Case 2: Reconnecting or any other state
+                if not current_song.is_live:  # Can't seek in livestreams
+                    logger.debug(f"[PLAYBACK] Seeking to position {current_position}s after reconnection")
+                    # Store status temporarily to prevent position reset in seek
+                    temp_status = self.status
+                    try:
+                        await self.seek(current_position)
+                        self.status = Status.PLAYING
+                        return
+                    except Exception as e:
+                        logger.error(f"[ERROR] Resuming with seek failed: {e}")
+                        # Continue with normal playback as fallback
+                        self.status = temp_status
+
         # Normal playback logic for new songs or fallback
+        logger.info(f"[PLAYBACK] Starting '{current_song.title}'")
+        
         try:
             # Get offset and duration limits
             offset_seconds = None
@@ -349,7 +361,7 @@ class Player:
                 self.last_song_url = current_song.url
                     
                 # Initialize or reset position tracking for new song
-                if not same_song:
+                if self.status == Status.IDLE or self.last_song_url != current_song.url:
                     self._start_position_tracking(0)
                 else:
                     # Continue position tracking for resumed song
@@ -474,6 +486,15 @@ class Player:
                 self.voice_client.stop()
                 
             self.status = Status.IDLE
+            
+            # **CRITICAL FIX**: Reset queue state when queue empties via skip
+            self.queue_position = 0
+            self.position_in_seconds = 0
+            self.last_song_url = ""
+            self._stop_position_tracking()
+            
+            # Clear the queue completely when it's finished
+            self.queue = []
                 
             # Schedule disconnection if queue is empty
             from ..db.client import get_guild_settings
@@ -828,9 +849,18 @@ class Player:
                 logger.info("[QUEUE] Auto-advancing to next track")
                 await self.forward(1)
             else:
-                # End of queue reached
+                # End of queue reached - PROPERLY RESET STATE
                 logger.info("[QUEUE] Reached end of queue")
                 self.status = Status.IDLE
+                
+                # **CRITICAL FIX**: Reset queue state when queue empties
+                self.queue_position = 0
+                self.position_in_seconds = 0
+                self.last_song_url = ""
+                self._stop_position_tracking()
+                
+                # Clear the queue completely when it's finished
+                self.queue = []
                 
                 # Schedule auto-disconnect if enabled
                 from ..db.client import get_guild_settings

@@ -106,26 +106,41 @@ class MusicCommands(commands.Cog):
                 # Start playback
                 await player.play()
                 
-                status_msg = "resuming playback" if was_playing else ""
-                
-                # Include embed with current playing song
+                # Send embed with currently playing track
                 embed = create_playing_embed(player)
                 
-                # Format response message
-                if status_msg:
-                    response = status_msg
-                else:
-                    response = Responses.NOW_PLAYING.format(player.get_current().title)
-                    
+                # Build status message
+                status_parts = []
+                if was_playing:
+                    status_parts.append("resuming playback")
+                
+                # Add extra message if exists
+                if extra_msg:
+                    status_parts.append(extra_msg)
+                
+                # Create content string
+                content = None
+                if status_parts:
+                    content = f"📡 {', '.join(status_parts).capitalize()}"
+                
                 await inter.followup.send(
+                    content=content,
                     embed=embed,
                     ephemeral=settings.queueAddResponseEphemeral
                 )
                 return
                 
             # If player is idle, start playback
-            if player.status == player.Status.IDLE:
+            elif player.status == player.Status.IDLE:
                 await player.play()
+                
+                # Send embed with currently playing track
+                embed = create_playing_embed(player)
+                await inter.followup.send(
+                    embed=embed,
+                    ephemeral=settings.queueAddResponseEphemeral
+                )
+                return
                 
             # Skip if requested
             if skip:

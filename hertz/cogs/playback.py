@@ -37,7 +37,7 @@ class PlaybackCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} paused playback")
             await player.pause()
-            await inter.followup.send(Responses.PAUSED)
+            await inter.followup.send("⏸️ Paused")
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
     
@@ -68,7 +68,7 @@ class PlaybackCommands(commands.Cog):
                 await player.play()
                 
                 await inter.followup.send(
-                    content=Responses.RESUMED,
+                    content="▶️ Resumed",
                     embed=create_playing_embed(player)
                 )
             else:
@@ -105,7 +105,7 @@ class PlaybackCommands(commands.Cog):
             
             if player.get_current():
                 await inter.followup.send(
-                    content=Responses.SKIPPED,
+                    content="⏭️ Skipped",
                     embed=create_playing_embed(player)
                 )
             else:
@@ -141,7 +141,7 @@ class PlaybackCommands(commands.Cog):
             logger.info(f"[COMMAND] {inter.author.display_name} went back to previous track")
             await player.back()
             await inter.followup.send(
-                content=Responses.PREVIOUS,
+                content="⏮️ Previous track",
                 embed=create_playing_embed(player)
             )
         except ValueError as e:
@@ -192,7 +192,7 @@ class PlaybackCommands(commands.Cog):
             
             logger.info(f"[COMMAND] {inter.author.display_name} seeked to {seek_time}s")
             await player.seek(seek_time)
-            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
+            await inter.followup.send(f"⏩ Seeked to {pretty_time(player.get_position())}")
             
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
@@ -241,7 +241,7 @@ class PlaybackCommands(commands.Cog):
             
             logger.info(f"[COMMAND] {inter.author.display_name} forward seeked by {forward_time}s")
             await player.forward_seek(forward_time)
-            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
+            await inter.followup.send(f"⏩ Seeked to {pretty_time(player.get_position())}")
             
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
@@ -273,7 +273,7 @@ class PlaybackCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} restarted current track")
             await player.seek(0)
-            await inter.followup.send(Responses.REPLAYED)
+            await inter.followup.send("🔄 Track restarted")
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
     
@@ -305,7 +305,7 @@ class PlaybackCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_song else 'disabled'} track loop")
         await inter.followup.send(
-            Responses.LOOPING if player.loop_current_song else Responses.LOOP_STOPPED
+            "🔁 Track loop enabled" if player.loop_current_song else "⏹️ Track loop disabled"
         )
     
     @commands.slash_command(
@@ -337,7 +337,7 @@ class PlaybackCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} set volume to {level}%")
         player.set_volume(level)
-        await inter.followup.send(Responses.VOLUME_SET.format(level))
+        await inter.followup.send(f"🔊 Volume set to {level}%")
     
     @commands.slash_command(
         name="disconnect",
@@ -360,7 +360,7 @@ class PlaybackCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} disconnected bot from voice")
         await player.disconnect()
-        await inter.followup.send(Responses.DISCONNECTED)
+        await inter.followup.send("🔌 Disconnected")
     
     @commands.slash_command(
         name="stop",
@@ -387,4 +387,4 @@ class PlaybackCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} stopped playback and cleared queue")
         await player.stop()
-        await inter.followup.send(Responses.STOPPED)
+        await inter.followup.send("⏹️ Stopped")

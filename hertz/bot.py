@@ -226,42 +226,42 @@ class HertzBot(commands.InteractionBot):
             
             # Prepare the welcome embeds
             owner_embed = disnake.Embed(
-                title="📡 HERTZ Broadcasting System - Now Online",
+                title="HERTZ Music Bot - Now Online",
                 description=(
-                    "**🎛️ Studio Configuration Ready**\n\n"
-                    "Thank you for adding HERTZ to your server! Your audio transmission station is now online and ready for operation.\n\n"
+                    "**🎛️ Setup Complete**\n\n"
+                    "Thank you for adding HERTZ to your server! Your music bot is now online and ready.\n\n"
                     "**Quick Start Guide:**\n"
-                    "• Use `/play` to begin audio transmission\n"
-                    "• Use `/help` to see all available controls\n"
-                    "• Administrators can use `/config` to adjust broadcast parameters\n\n"
+                    "• Use `/play` to start playing music\n"
+                    "• Use `/help` to see all available commands\n"
+                    "• Administrators can use `/config` to adjust settings\n\n"
                     "By default, all server members can control HERTZ in all channels. "
-                    "For professional operation, consider configuring channel-specific permissions."
+                    "For better control, consider configuring channel-specific permissions."
                 ),
                 color=disnake.Color.blue()
             )
             
             owner_embed.add_field(
-                name="📻 Signal Setup",
-                value="Join a voice channel and use `/play` to start your first transmission!",
+                name="🎵 Getting Started",
+                value="Join a voice channel and use `/play` to start your first song!",
                 inline=False
             )
             
             owner_embed.add_field(
-                name="🔧 Technical Support",
-                value="If you experience signal interference, visit our support server or documentation.",
+                name="🔧 Support",
+                value="If you need help, visit our support server or documentation.",
                 inline=False
             )
             
-            owner_embed.set_footer(text="HERTZ Audio Solutions - Professional Broadcasting for Discord")
+            owner_embed.set_footer(text="HERTZ Music Bot - Professional Discord Audio")
             
             channel_embed = disnake.Embed(
-                title="📡 HERTZ Broadcasting System - Now Online",
+                title="HERTZ Music Bot - Now Online",
                 description=(
-                    "**🎛️ Audio Transmission Station Ready**\n\n"
-                    "Thanks for adding HERTZ to your server! Your music broadcasting system is now online.\n\n"
-                    "• Use `/play` to start transmitting music\n"
+                    "**🎛️ Music Bot Ready**\n\n"
+                    "Thanks for adding HERTZ to your server! Your music bot is now online.\n\n"
+                    "• Use `/play` to start playing music\n"
                     "• Administrators can use `/config` to adjust settings\n\n"
-                    "Join a voice channel to begin broadcasting!"
+                    "Join a voice channel to begin!"
                 ),
                 color=disnake.Color.blue()
             )
@@ -293,46 +293,5 @@ class HertzBot(commands.InteractionBot):
             
         except Exception as e:
             logger.error(f"Error in guild join handler: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-    
-    async def on_voice_state_update(self, member: disnake.Member, before: disnake.VoiceState, after: disnake.VoiceState):
-        """Handle voice state updates with improved error handling"""
-        # Skip bot updates
-        if member.bot:
-            return
-        
-        try:
-            # Handle disconnections
-            if before.channel and (not after.channel or before.channel.id != after.channel.id):
-                player = self.player_manager.get_player(member.guild.id)
-                
-                if not player.voice_client:
-                    return
-                    
-                if player.voice_client.channel.id == before.channel.id:
-                    # Check if any non-bot users remain
-                    non_bot_count = sum(1 for m in before.channel.members if not m.bot)
-                    
-                    if non_bot_count == 0:
-                        from .db.client import get_guild_settings
-                        settings = await get_guild_settings(str(member.guild.id))
-                        
-                        if settings.leaveIfNoListeners:
-                            logger.info(f"All users left voice channel in {member.guild.name}, disconnecting")
-                            await player.disconnect()
-                
-            # Handle reconnection attempts for moved channels
-            if after.channel and member.id == self.user.id:
-                player = self.player_manager.get_player(member.guild.id)
-                
-                if player.voice_client and player.voice_client.channel.id != after.channel.id:
-                    logger.info(f"Bot was moved to a new channel in {member.guild.name}, reconnecting")
-                    await player.connect(after.channel)
-                    if player.status in [player.Status.PLAYING, player.Status.PAUSED]:
-                        await player.play()
-                        
-        except Exception as e:
-            logger.error(f"Error in voice state update handler: {e}")
             import traceback
             logger.error(traceback.format_exc())

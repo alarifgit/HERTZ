@@ -105,7 +105,7 @@ class QueueCommands(commands.Cog):
         logger.info(f"[COMMAND] {inter.author.display_name} cleared the queue")
         player.clear()
         
-        await inter.followup.send(Responses.QUEUE_CLEARED)
+        await inter.followup.send("🧹 Queue cleared")
     
     @commands.slash_command(
         name="remove",
@@ -138,7 +138,7 @@ class QueueCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} removed {range} tracks starting at position {position}")
             player.remove_from_queue(position, range)
-            await inter.followup.send("🗑️ Tracks removed from playlist")
+            await inter.followup.send("🗑️ Tracks removed from queue")
         except IndexError:
             await inter.followup.send(error_msg("Invalid queue position"))
         except Exception as e:
@@ -176,7 +176,7 @@ class QueueCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} moved track from position {from_pos} to {to_pos}")
             song = player.move(from_pos, to_pos)
-            await inter.followup.send(f"🔀 **{song.title}** repositioned to slot **{to_pos}**")
+            await inter.followup.send(f"🔀 **{song.title}** moved to position **{to_pos}**")
         except IndexError:
             await inter.followup.send(error_msg("Invalid queue position"))
         except ValueError as e:
@@ -203,7 +203,7 @@ class QueueCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} shuffled the queue")
         player.shuffle()
-        await inter.followup.send(Responses.SHUFFLED)
+        await inter.followup.send("🔀 Queue shuffled")
     
     @commands.slash_command(
         name="loop-queue",
@@ -237,5 +237,5 @@ class QueueCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_queue else 'disabled'} queue loop")
         await inter.followup.send(
-            Responses.QUEUE_LOOPING if player.loop_current_queue else Responses.QUEUE_LOOP_STOPPED
+            "🔄 Queue loop enabled" if player.loop_current_queue else "⏹️ Queue loop disabled"
         )
