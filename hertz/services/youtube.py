@@ -730,36 +730,48 @@ def parse_chapters_from_description(description: str, video_duration: int) -> Li
 
 def parse_duration(duration_str: str) -> int:
     """
-    Parse ISO 8601 duration format used by YouTube API
+    Parse ISO 8601 duration format used by YouTube API with better error handling
     
     Example: 'PT1H30M15S' -> 5415 seconds
     """
     if not duration_str:
         return 0
     
-    # Remove PT prefix
-    duration_str = duration_str.replace('PT', '')
-    
-    hours = 0
-    minutes = 0
-    seconds = 0
-    
-    # Extract hours
-    h_match = re.search(r'(\d+)H', duration_str)
-    if h_match:
-        hours = int(h_match.group(1))
-    
-    # Extract minutes
-    m_match = re.search(r'(\d+)M', duration_str)
-    if m_match:
-        minutes = int(m_match.group(1))
-    
-    # Extract seconds
-    s_match = re.search(r'(\d+)S', duration_str)
-    if s_match:
-        seconds = int(s_match.group(1))
-    
-    return hours * 3600 + minutes * 60 + seconds
+    try:
+        # Remove PT prefix
+        duration_str = duration_str.replace('PT', '')
+        
+        hours = 0
+        minutes = 0
+        seconds = 0
+        
+        # Extract hours - handle both H and h
+        h_match = re.search(r'(\d+)[Hh]', duration_str)
+        if h_match:
+            hours = int(h_match.group(1))
+        
+        # Extract minutes - handle both M and m (but not after H)
+        m_match = re.search(r'(\d+)M', duration_str)
+        if m_match:
+            minutes = int(m_match.group(1))
+        
+        # Extract seconds - handle both S and s
+        s_match = re.search(r'(\d+(?:\.\d+)?)[Ss]', duration_str)
+        if s_match:
+            seconds = int(float(s_match.group(1)))
+        
+        total = hours * 3600 + minutes * 60 + seconds
+        
+        # Sanity check - YouTube videos shouldn't be longer than 24 hours
+        if total > 86400:
+            logger.warning(f"Suspiciously long duration: {duration_str} -> {total}s")
+            return min(total, 86400)
+        
+        return total
+        
+    except Exception as e:
+        logger.error(f"Error parsing duration '{duration_str}': {e}")
+        return 0
 
 def extract_youtube_id(url: str) -> Optional[str]:
     """Extract YouTube video ID from a URL"""
