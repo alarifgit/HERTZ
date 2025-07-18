@@ -7,6 +7,7 @@ import hashlib
 import shutil
 import subprocess
 import time
+import json
 from typing import Optional, List, Dict, Any, Union, Callable
 
 import disnake
@@ -72,7 +73,7 @@ class QueuedSong:
         }
 
 class VoiceConnectionManager:
-    """Manages voice connection with automatic recovery"""
+    """Manages voice connection with automatic recovery - similar to muse"""
     
     def __init__(self, player: 'Player'):
         self.player = player
@@ -84,7 +85,7 @@ class VoiceConnectionManager:
         self.is_recovering = False
         
     async def connect_with_retry(self, channel: disnake.VoiceChannel, max_retries: int = 3) -> bool:
-        """Connect to voice channel with retry logic"""
+        """Connect to voice channel with retry logic like muse"""
         for attempt in range(max_retries):
             try:
                 logger.info(f"[VOICE] Connection attempt {attempt + 1}/{max_retries} to '{channel.name}'")
@@ -93,18 +94,18 @@ class VoiceConnectionManager:
                 if self.player.voice_client:
                     try:
                         await self.player.voice_client.disconnect(force=True)
-                        await asyncio.sleep(1)  # Give Discord time to process
+                        await asyncio.sleep(1)
                     except Exception as e:
                         logger.warning(f"[VOICE] Error disconnecting old connection: {e}")
                 
-                # Connect to new channel
+                # Connect to new channel with timeout
                 self.player.voice_client = await channel.connect(
                     timeout=30.0,
                     reconnect=True,
                     self_deaf=True
                 )
                 
-                # Wait a moment to ensure connection is stable
+                # Wait to ensure connection is stable
                 await asyncio.sleep(2)
                 
                 if self.player.voice_client.is_connected():
@@ -112,7 +113,7 @@ class VoiceConnectionManager:
                     self.connection_failures = 0
                     self.player.current_channel = channel
                     
-                    # Set up event handlers
+                    # Set up event handlers like muse
                     self._setup_voice_events()
                     
                     return True
@@ -124,7 +125,7 @@ class VoiceConnectionManager:
                 self.connection_failures += 1
                 
                 if attempt < max_retries - 1:
-                    delay = (attempt + 1) * 2  # Exponential backoff
+                    delay = (attempt + 1) * 2
                     logger.info(f"[VOICE] Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
         
@@ -140,9 +141,9 @@ class VoiceConnectionManager:
         self.player.voice_client.remove_all_listeners()
     
     async def _handle_disconnect(self):
-        """Handle unexpected disconnection"""
+        """Handle unexpected disconnection like muse does"""
         if self.is_recovering:
-            return  # Already recovering
+            return
             
         logger.warning("[VOICE] Handling unexpected disconnection")
         self.is_recovering = True
@@ -159,7 +160,7 @@ class VoiceConnectionManager:
                 self.player.status == self.player.Status.PLAYING and 
                 self.player.current_channel):
                 
-                logger.info("[VOICE] Attempting to recover playback...")
+                logger.info("[VOICE] Attempting to recover playbook...")
                 
                 # Try to reconnect
                 if await self.connect_with_retry(self.player.current_channel):
@@ -208,7 +209,10 @@ class Player:
         self._last_playback_check = time.time()
         
         # Store the event loop from the main thread
-        self.main_loop = asyncio.get_event_loop()
+        try:
+            self.main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.main_loop = asyncio.new_event_loop()
         
         # Track state for better debugging
         self._last_queue_change = time.time()
@@ -216,14 +220,17 @@ class Player:
         
         logger.debug(f"[INIT] Player created for guild {guild_id}")
         
-    def add_playback_event_listener(self, callback: Callable):
+    def add_playbook_event_listener(self, callback: Callable):
         """Add a callback for playback events"""
-        self._playback_event_listeners.append(callback)
+        self._playbook_event_listeners.append(callback)
         
-    def _notify_playback_event(self, event_type: str, **kwargs):
+    def _notify_playbook_event(self, event_type: str, **kwargs):
         """Notify all listeners of a playback event"""
-        for callback in self._playback_event_listeners:
-            asyncio.create_task(callback(event_type, **kwargs))
+        for callback in self._playbook_event_listeners:
+            try:
+                asyncio.create_task(callback(event_type, **kwargs))
+            except Exception as e:
+                logger.error(f"Error in playback event callback: {e}")
     
     def get_current(self) -> Optional[QueuedSong]:
         """Get the currently playing song with bounds checking"""
@@ -253,7 +260,7 @@ class Player:
         return self.queue_size() == 0
     
     def add(self, song: Union[QueuedSong, Dict[str, Any]], immediate: bool = False) -> None:
-        """Add a song to the queue with improved state management"""
+        """Add a song to the queue with improved state management like muse"""
         # Convert dict to QueuedSong if necessary
         if isinstance(song, dict):
             if "source" in song and isinstance(song["source"], int):
@@ -268,7 +275,7 @@ class Player:
             self._last_queue_change = time.time()
             return
         
-        # Add to queue based on immediate flag and playlist status
+        # Add to queue based on immediate flag and playlist status - like muse logic
         if song.playlist or not immediate:
             # Add to end of queue
             self.queue.append(song)
@@ -296,7 +303,7 @@ class Player:
         self._last_queue_change = time.time()
     
     def shuffle(self) -> None:
-        """Shuffle the queue with proper state preservation"""
+        """Shuffle the queue with proper state preservation like muse"""
         if not self.queue:
             logger.debug("[QUEUE] Shuffle requested but queue is empty")
             return
@@ -325,7 +332,7 @@ class Player:
         self._last_queue_change = time.time()
     
     def remove_from_queue(self, index: int, amount: int = 1) -> None:
-        """Remove songs from the queue with proper bounds checking"""
+        """Remove songs from the queue with proper bounds checking like muse"""
         if not self.queue or index < 1:
             logger.warning(f"[QUEUE] Invalid remove request: index={index}, queue_size={len(self.queue)}")
             raise IndexError("Invalid queue position")
@@ -359,7 +366,7 @@ class Player:
             self.queue_position = len(self.queue) - 1 if self.queue else 0
     
     def move(self, from_pos: int, to_pos: int) -> QueuedSong:
-        """Move a song in the queue with proper validation"""
+        """Move a song in the queue with proper validation like muse"""
         if not self.queue or from_pos < 1 or to_pos < 1:
             raise ValueError("Invalid position")
         
@@ -399,14 +406,14 @@ class Player:
         return self.volume if self.volume is not None else self.default_volume
     
     def set_volume(self, level: int) -> None:
-        """Set volume level (0-100)"""
+        """Set volume level (0-100) like muse"""
         self.volume = max(0, min(100, level))
         if self.voice_client and hasattr(self.voice_client, "source") and self.voice_client.source:
             self.voice_client.source.volume = self.get_volume() / 100.0
         logger.info(f"[VOLUME] Set to {self.volume}%")
     
     async def connect(self, channel: disnake.VoiceChannel) -> None:
-        """Connect to a voice channel with improved reliability"""
+        """Connect to a voice channel with improved reliability like muse"""
         # Get default volume from settings
         from ..db.client import get_guild_settings
         settings = await get_guild_settings(self.guild_id)
@@ -424,7 +431,7 @@ class Player:
         self._register_voice_activity_listeners(channel)
     
     def _start_connection_health_monitor(self):
-        """Start monitoring connection health"""
+        """Start monitoring connection health like muse"""
         if self._connection_health_task:
             self._connection_health_task.cancel()
         
@@ -442,7 +449,7 @@ class Player:
                     # Check for stuck playback
                     current_time = time.time()
                     if (self.status == Status.PLAYING and 
-                        current_time - self._last_playback_check > 60):  # No updates for 1 minute
+                        current_time - self._last_playback_check > 60):
                         
                         current_song = self.get_current()
                         if current_song and not current_song.is_live:
@@ -464,7 +471,7 @@ class Player:
         self._connection_health_task = asyncio.create_task(monitor_connection())
     
     async def disconnect(self) -> None:
-        """Enhanced disconnect with proper cleanup"""
+        """Enhanced disconnect with proper cleanup like muse"""
         self._stop_position_tracking()
         
         # Cancel health monitoring
@@ -499,10 +506,10 @@ class Player:
         self.status = Status.IDLE
         self.current_channel = None
         self.voice_manager.is_recovering = False
-        self._notify_playback_event("disconnect")
+        self._notify_playbook_event("disconnect")
     
     async def play(self) -> None:
-        """Enhanced play method with better error recovery"""
+        """Enhanced play method with better error recovery like muse"""
         async with self._playback_lock:
             if not self.voice_client:
                 raise ValueError("Not connected to a voice channel")
@@ -526,7 +533,7 @@ class Player:
                 self.disconnect_timer.cancel()
                 self.disconnect_timer = None
             
-            # Enhanced resume logic
+            # Enhanced resume logic like muse
             same_song = current_song.url == self.last_song_url
             
             logger.info(f"[PLAYBACK] Starting playback of '{current_song.title}' (same_song: {same_song}, status: {self.status.name})")
@@ -540,7 +547,7 @@ class Player:
                 self.status = Status.PLAYING
                 self._start_position_tracking()
                 self._last_playback_check = time.time()
-                self._notify_playback_event("resume", song=current_song)
+                self._notify_playbook_event("resume", song=current_song)
                 return
             
             # Case 2: Resume from disconnection with seek
@@ -557,33 +564,33 @@ class Player:
             logger.info(f"[PLAYBACK] Starting fresh playback")
             
             try:
-                # Get audio source with retries
+                # Get audio source with retries like muse does
                 source = await self._get_audio_source_with_retry(
                     current_song,
                     seek_position=current_song.offset if current_song.offset > 0 else None,
                     duration=current_song.length + current_song.offset if not current_song.is_live else None
                 )
                 
-                # Enhanced after callback
+                # Enhanced after callback like muse
                 def after_playing(error):
                     self._last_playback_check = time.time()
                     
                     if error:
                         logger.error(f"[ERROR] Playback error: {error}")
-                        # Try to recover on next loop iteration
                         
                     # Schedule the coroutine in the main event loop
                     try:
-                        self.main_loop.call_soon_threadsafe(
-                            lambda: asyncio.create_task(self._handle_song_finished())
-                        )
+                        if self.main_loop.is_running():
+                            self.main_loop.call_soon_threadsafe(
+                                lambda: asyncio.create_task(self._handle_song_finished())
+                            )
                     except Exception as e:
                         logger.error(f"[ERROR] After-playing callback error: {e}")
                 
                 # Stop any existing playback
                 if self.voice_client.is_playing() or self.voice_client.is_paused():
                     self.voice_client.stop()
-                    await asyncio.sleep(0.3)  # Longer delay for cleanup
+                    await asyncio.sleep(0.3)
                 
                 # Start playback
                 self.voice_client.play(source, after=after_playing)
@@ -599,11 +606,11 @@ class Player:
                 self._last_playback_check = time.time()
                 
                 logger.info(f"[PLAYBACK] Successfully started '{current_song.title}'")
-                self._notify_playback_event("play", song=current_song)
+                self._notify_playbook_event("play", song=current_song)
                 
             except Exception as e:
                 logger.error(f"[ERROR] Critical error in playback: {e}")
-                # Try to recover by skipping to next song
+                # Try to recover by skipping to next song like muse
                 try:
                     await self.forward(1)
                 except Exception:
@@ -622,10 +629,10 @@ class Player:
         self.status = Status.PAUSED
         self._stop_position_tracking()
         logger.info("[PLAYBACK] Paused")
-        self._notify_playback_event("pause", song=self.get_current())
+        self._notify_playbook_event("pause", song=self.get_current())
     
     async def seek(self, position_seconds: int) -> None:
-        """Seek to a specific position in the track"""
+        """Seek to a specific position in the track like muse"""
         if not self.voice_client:
             raise ValueError("Not connected to a voice channel")
             
@@ -657,15 +664,16 @@ class Player:
         def after_playing(error):
             if error:
                 logger.error(f"[ERROR] Playback error after seek: {error}")
-            self.main_loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._handle_song_finished())
-            )
+            if self.main_loop.is_running():
+                self.main_loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(self._handle_song_finished())
+                )
         
         # Play from new position
         self.voice_client.play(source, after=after_playing)
         self.status = Status.PLAYING
         self._start_position_tracking(position_seconds)
-        self._notify_playback_event("seek", song=current_song, position=position_seconds)
+        self._notify_playbook_event("seek", song=current_song, position=position_seconds)
     
     async def forward_seek(self, seconds: int) -> None:
         """Seek forward by a certain number of seconds"""
@@ -675,7 +683,7 @@ class Player:
         return await self.seek(target_position)
     
     async def forward(self, skip: int) -> None:
-        """Skip forward in the queue with improved error handling"""
+        """Skip forward in the queue with improved error handling like muse"""
         if skip < 1:
             raise ValueError("Skip amount must be positive")
         
@@ -718,7 +726,7 @@ class Player:
         self.loop_current_queue = was_looping_queue
         
         # Notify about the skip
-        self._notify_playback_event("skip", old_position=old_position, new_position=self.queue_position)
+        self._notify_playbook_event("skip", old_position=old_position, new_position=self.queue_position)
         
         # Start playing the new song if not paused
         if self.status != Status.PAUSED:
@@ -741,7 +749,7 @@ class Player:
         logger.info(f"[QUEUE] Moved back from position {old_position} to {self.queue_position} ('{song_title}')")
         
         # Notify about going back
-        self._notify_playback_event("back", old_position=old_position, new_position=self.queue_position)
+        self._notify_playbook_event("back", old_position=old_position, new_position=self.queue_position)
         
         if self.status != Status.PAUSED:
             await self.play()
@@ -759,7 +767,7 @@ class Player:
         self.queue = []
         self.queue_position = 0
         self._last_queue_change = time.time()
-        self._notify_playback_event("stop")
+        self._notify_playbook_event("stop")
     
     # Private helper methods
     async def _get_audio_source_with_retry(
@@ -777,7 +785,7 @@ class Player:
                 logger.warning(f"[RETRY] Audio source attempt {attempt + 1} failed: {e}")
                 if attempt == max_retries - 1:
                     raise
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                await asyncio.sleep(2 ** attempt)
     
     async def _get_audio_source(
         self, 
@@ -785,17 +793,17 @@ class Player:
         seek_position: Optional[int] = None,
         duration: Optional[int] = None
     ) -> disnake.PCMVolumeTransformer:
-        """Get an audio source for the given song with proper error handling"""
+        """Get an audio source for the given song - improved to match muse's logic"""
         import yt_dlp
         
         # Generate cache key
         cache_key = hashlib.md5(f"{song.url}_{seek_position or 0}".encode()).hexdigest()
         cache_path = await self.file_cache.get_path_for(cache_key)
         
-        # Prepare ffmpeg options with better audio handling
+        # Prepare ffmpeg options with better audio handling like muse
         ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -filter:a "volume=0.8"'  # Prevent clipping
+            'options': '-vn -filter:a "volume=0.8"'
         }
         
         if seek_position is not None:
@@ -826,21 +834,25 @@ class Player:
             source = disnake.FFmpegPCMAudio(song.url, **ffmpeg_options)
             return disnake.PCMVolumeTransformer(source, volume=self.get_volume() / 100.0)
         
-        # YouTube source with improved format selection (like muse)
+        # YouTube source with improved format selection like muse
         ydl_opts = {
-            'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best',
+            # Format selection similar to muse's logic
+            'format': (
+                'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]'
+                '/bestaudio[container=webm]/bestaudio'
+            ),
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
             'extract_flat': False,
             'writethumbnail': False,
             'writeinfojson': False,
-            'ignoreerrors': False,  # We want to know about errors
+            'ignoreerrors': False,
             'retries': 3,
             'fragment_retries': 3,
             'socket_timeout': 30,
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
         }
         
@@ -862,14 +874,31 @@ class Player:
             if not info:
                 raise ValueError(f"Could not extract info for {song.url}")
             
-            # Get the best audio URL
+            # Get the best audio URL - like muse's format selection
             url = info.get('url')
             if not url:
                 # Try to get from requested_formats or formats
                 formats = info.get('requested_formats') or info.get('formats', [])
-                audio_formats = [f for f in formats if f.get('acodec') != 'none']
+                
+                # Filter for audio-only formats like muse does
+                audio_formats = []
+                for f in formats:
+                    if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
+                        audio_formats.append(f)
+                
+                # If no audio-only, get formats with audio
+                if not audio_formats:
+                    audio_formats = [f for f in formats if f.get('acodec') != 'none']
+                
                 if audio_formats:
-                    url = audio_formats[0]['url']
+                    # Prefer opus in webm like muse
+                    opus_formats = [f for f in audio_formats if f.get('acodec') == 'opus' and f.get('ext') == 'webm']
+                    if opus_formats:
+                        url = opus_formats[0]['url']
+                    else:
+                        # Sort by quality and pick best
+                        audio_formats.sort(key=lambda x: x.get('abr', 0), reverse=True)
+                        url = audio_formats[0]['url']
                 else:
                     raise ValueError(f"Could not get stream URL for {song.url}")
             
@@ -878,8 +907,8 @@ class Player:
             # Check if we should cache (like muse does)
             should_cache = (
                 not info.get('is_live', False) and 
-                (info.get('duration') or 0) < 30 * 60 and  # Less than 30 minutes
-                seek_position is None and  # Not seeking
+                (info.get('duration') or 0) < 30 * 60 and  # Less than 30 minutes like muse
+                seek_position is None and
                 not song.is_live
             )
             
@@ -898,7 +927,7 @@ class Player:
             raise ValueError(f"Could not get audio for {song.title}: {str(e)}")
     
     async def _cache_song_from_url(self, song: QueuedSong, url: str, cache_key: str) -> None:
-        """Cache a song from its stream URL"""
+        """Cache a song from its stream URL like muse does"""
         try:
             cache_path = os.path.join(self.file_cache.cache_dir, cache_key)
             if os.path.exists(cache_path):
@@ -909,7 +938,7 @@ class Player:
             
             logger.debug(f"[CACHE] Downloading '{song.title}' to cache")
             
-            # Use ffmpeg to download with opus encoding for better compatibility
+            # Use ffmpeg to download with opus encoding for better compatibility like muse
             cmd = [
                 'ffmpeg', '-y',
                 '-i', url,
@@ -975,7 +1004,7 @@ class Player:
             logger.debug("[PLAYBACK] Stopped position tracking")
     
     def _register_voice_activity_listeners(self, channel: disnake.VoiceChannel) -> None:
-        """Register listeners for voice activity to adjust volume"""
+        """Register listeners for voice activity to adjust volume like muse"""
         from ..db.client import get_guild_settings
         
         async def setup_voice_listener():
@@ -989,13 +1018,13 @@ class Player:
             
             # Note: Proper voice activity detection would require
             # access to Discord's voice WebSocket API which is not
-            # directly available in disnake
+            # directly available in disnake like it is in Discord.js
             
         # Run in event loop
         asyncio.create_task(setup_voice_listener())
     
     async def _handle_song_finished(self) -> None:
-        """Handle a song finishing playback with improved state management"""
+        """Handle a song finishing playback - like muse's logic"""
         # Use lock to prevent race conditions
         async with self._playback_lock:
             if self.status != Status.PLAYING:
@@ -1009,13 +1038,13 @@ class Player:
                 
             logger.debug(f"[PLAYBACK] Song finished: '{current_song.title}'")
                 
-            # Handle looping current song
+            # Handle looping current song like muse
             if self.loop_current_song:
                 logger.info("[PLAYBACK] Song finished - Looping current song")
                 await self.seek(0)
                 return
                 
-            # Handle looping queue - add current song to end
+            # Handle looping queue - add current song to end like muse
             if self.loop_current_queue:
                 logger.debug("[PLAYBACK] Adding current song to end of queue (queue loop enabled)")
                 self.add(current_song)
@@ -1034,47 +1063,57 @@ class Player:
                 # Start playing next song
                 await self.play()
                 
-                # Auto-announce if configured
+                # Auto-announce if configured like muse
                 await self._auto_announce_if_needed()
             else:
                 # End of queue reached
                 await self._handle_queue_end()
     
     async def _handle_queue_end(self) -> None:
-        """Handle reaching the end of the queue"""
+        """Handle reaching the end of the queue like muse"""
         logger.info("[QUEUE] Reached end of queue")
         self.status = Status.IDLE
         
-        # Reset queue state completely
+        # Reset queue state completely like muse
         self.queue_position = 0
         self.position_in_seconds = 0
         self.last_song_url = ""
         self._stop_position_tracking()
         
-        # Clear the queue completely when it's finished
+        # Clear the queue completely when it's finished like muse
         self.queue = []
         self._last_queue_change = time.time()
             
-        # Schedule auto-disconnect if enabled
+        # Schedule auto-disconnect if enabled like muse
         from ..db.client import get_guild_settings
         settings = await get_guild_settings(self.guild_id)
         disconnect_delay = settings.secondsToWaitAfterQueueEmpties
         
         if disconnect_delay > 0:
             logger.info(f"[VOICE] Scheduling disconnect in {disconnect_delay}s due to empty queue")
+            
             async def disconnect_callback():
                 if self.status == Status.IDLE:
                     await self.disconnect()
             
-            self.disconnect_timer = self.main_loop.call_later(
-                disconnect_delay, 
-                lambda: asyncio.create_task(disconnect_callback())
-            )
+            # Use asyncio.call_later instead of threading timer like muse
+            if hasattr(self.main_loop, 'call_later'):
+                self.disconnect_timer = self.main_loop.call_later(
+                    disconnect_delay, 
+                    lambda: asyncio.create_task(disconnect_callback())
+                )
+            else:
+                # Fallback
+                async def delayed_disconnect():
+                    await asyncio.sleep(disconnect_delay)
+                    await disconnect_callback()
+                
+                self.disconnect_timer = asyncio.create_task(delayed_disconnect())
             
-        self._notify_playback_event("queue_end")
+        self._notify_playbook_event("queue_end")
     
     async def _auto_announce_if_needed(self) -> None:
-        """Auto-announce the current song if enabled"""
+        """Auto-announce the current song if enabled like muse"""
         current = self.get_current()
         if not current:
             return
