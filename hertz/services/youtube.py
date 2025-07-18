@@ -3,6 +3,7 @@ import asyncio
 import re
 import logging
 import json
+import time
 from typing import List, Dict, Any, Optional, Tuple, Union
 
 import aiohttp
@@ -24,7 +25,7 @@ async def search_youtube(
     api_key: str
 ) -> List[Dict[str, Any]]:
     """
-    Search YouTube for a query string
+    Search YouTube for a query string with improved error handling
     
     Args:
         query: Search string
@@ -56,69 +57,100 @@ async def _search_youtube_impl(
     api_key: str,
     cache_key: str
 ) -> List[Dict[str, Any]]:
-    """Implementation of YouTube search with API call"""
-    try:
-        # Search for videos
-        async with aiohttp.ClientSession() as session:
-            params = {
-                'part': 'snippet',
-                'maxResults': 1,
-                'q': query,
-                'type': 'video',
-                'key': api_key
-            }
-            
-            async with session.get(
-                'https://www.googleapis.com/youtube/v3/search',
-                params=params
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"YouTube API error: {error_text}")
-                    raise ValueError(f"YouTube API error: {response.status}")
+    """Implementation of YouTube search with API call and retry logic"""
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            # Search for videos with timeout and retry logic
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30, connect=10),
+                connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+            ) as session:
+                params = {
+                    'part': 'snippet',
+                    'maxResults': 1,
+                    'q': query,
+                    'type': 'video',
+                    'key': api_key
+                }
                 
-                search_data = await response.json()
+                async with session.get(
+                    'https://www.googleapis.com/youtube/v3/search',
+                    params=params
+                ) as response:
+                    if response.status == 429:  # Rate limit
+                        retry_after = int(response.headers.get('Retry-After', '60'))
+                        logger.warning(f"YouTube API rate limit hit, waiting {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        continue
+                        
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"YouTube API error: {error_text}")
+                        if attempt == max_retries - 1:
+                            raise ValueError(f"YouTube API error: {response.status}")
+                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    
+                    search_data = await response.json()
+                
+                # No results
+                if not search_data.get('items'):
+                    return []
+                
+                # Get video IDs to fetch detailed info
+                video_id = search_data['items'][0]['id']['videoId']
+                
+                # Get detailed video info
+                video = await get_video_details(video_id, api_key)
+                
+                if not video:
+                    return []
+                
+                # Process chapters if needed
+                if should_split_chapters:
+                    videos = await process_video_chapters(video, api_key)
+                    if videos:
+                        # Cache the result
+                        await key_value_cache.set(
+                            cache_key,
+                            json.dumps(videos),
+                            ONE_HOUR_IN_SECONDS
+                        )
+                        return videos
+                
+                # Process as single video
+                result = [format_video_metadata(video)]
+                
+                # Cache the result
+                await key_value_cache.set(
+                    cache_key,
+                    json.dumps(result),
+                    ONE_HOUR_IN_SECONDS
+                )
+                
+                return result
+                
+        except asyncio.TimeoutError:
+            logger.warning(f"YouTube API timeout on attempt {attempt + 1}")
+            if attempt == max_retries - 1:
+                raise ValueError("YouTube API timeout after retries")
+            await asyncio.sleep(2 ** attempt)
             
-            # No results
-            if not search_data.get('items'):
+        except aiohttp.ClientError as e:
+            logger.warning(f"YouTube API connection error on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                raise ValueError(f"YouTube API connection error: {e}")
+            await asyncio.sleep(2 ** attempt)
+            
+        except Exception as e:
+            logger.error(f"Error searching YouTube: {str(e)}")
+            if attempt == max_retries - 1:
                 return []
-            
-            # Get video IDs to fetch detailed info
-            video_id = search_data['items'][0]['id']['videoId']
-            
-            # Get detailed video info
-            video = await get_video_details(video_id, api_key)
-            
-            if not video:
-                return []
-            
-            # Process chapters if needed
-            if should_split_chapters:
-                videos = await process_video_chapters(video, api_key)
-                if videos:
-                    # Cache the result
-                    await key_value_cache.set(
-                        cache_key,
-                        json.dumps(videos),
-                        ONE_HOUR_IN_SECONDS
-                    )
-                    return videos
-            
-            # Process as single video
-            result = [format_video_metadata(video)]
-            
-            # Cache the result
-            await key_value_cache.set(
-                cache_key,
-                json.dumps(result),
-                ONE_HOUR_IN_SECONDS
-            )
-            
-            return result
-            
-    except Exception as e:
-        logger.error(f"Error searching YouTube: {str(e)}")
-        return []
+            await asyncio.sleep(2 ** attempt)
+    
+    return []
 
 async def get_youtube_video(
     url: str,
@@ -205,7 +237,7 @@ async def get_youtube_playlist(
     api_key: str
 ) -> List[Dict[str, Any]]:
     """
-    Get metadata for a YouTube playlist with batched processing
+    Get metadata for a YouTube playlist with improved error handling
     
     Args:
         playlist_id: YouTube playlist ID
@@ -237,155 +269,235 @@ async def _get_youtube_playlist_impl(
     api_key: str,
     cache_key: str
 ) -> List[Dict[str, Any]]:
-    """Implementation of playlist retrieval"""
-    try:
-        # Get playlist details first
-        async with aiohttp.ClientSession() as session:
-            params = {
-                'part': 'snippet',
-                'id': playlist_id,
-                'key': api_key
-            }
-            
-            async with session.get(
-                'https://www.googleapis.com/youtube/v3/playlists',
-                params=params
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"YouTube API error: {error_text}")
-                    raise ValueError(f"YouTube API error: {response.status}")
-                
-                playlist_data = await response.json()
-            
-            if not playlist_data.get('items'):
-                return []
-            
-            playlist = playlist_data['items'][0]
-            playlist_title = playlist['snippet']['title']
-            
-            # Get playlist items with pagination
-            all_video_ids = []
-            next_page_token = None
-            
-            while True:
+    """Implementation of playlist retrieval with improved error handling"""
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            # Get playlist details first
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60, connect=10),
+                connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+            ) as session:
                 params = {
-                    'part': 'snippet,contentDetails',
-                    'maxResults': 50,  # Max allowed by API
-                    'playlistId': playlist_id,
+                    'part': 'snippet',
+                    'id': playlist_id,
                     'key': api_key
                 }
                 
-                if next_page_token:
-                    params['pageToken'] = next_page_token
-                
-                # Get items for this page
                 async with session.get(
-                    'https://www.googleapis.com/youtube/v3/playlistItems',
+                    'https://www.googleapis.com/youtube/v3/playlists',
                     params=params
                 ) as response:
+                    if response.status == 429:  # Rate limit
+                        retry_after = int(response.headers.get('Retry-After', '60'))
+                        logger.warning(f"YouTube API rate limit hit, waiting {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        continue
+                        
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"YouTube API error: {error_text}")
+                        if attempt == max_retries - 1:
+                            raise ValueError(f"YouTube API error: {response.status}")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    
+                    playlist_data = await response.json()
+                
+                if not playlist_data.get('items'):
+                    return []
+                
+                playlist = playlist_data['items'][0]
+                playlist_title = playlist['snippet']['title']
+                
+                # Get playlist items with pagination
+                all_video_ids = []
+                next_page_token = None
+                
+                while True:
+                    params = {
+                        'part': 'snippet,contentDetails',
+                        'maxResults': 50,  # Max allowed by API
+                        'playlistId': playlist_id,
+                        'key': api_key
+                    }
+                    
+                    if next_page_token:
+                        params['pageToken'] = next_page_token
+                    
+                    # Get items for this page with retry logic
+                    for page_attempt in range(3):
+                        try:
+                            async with session.get(
+                                'https://www.googleapis.com/youtube/v3/playlistItems',
+                                params=params
+                            ) as response:
+                                if response.status == 429:  # Rate limit
+                                    retry_after = int(response.headers.get('Retry-After', '30'))
+                                    logger.warning(f"YouTube API rate limit hit, waiting {retry_after}s")
+                                    await asyncio.sleep(retry_after)
+                                    continue
+                                    
+                                if response.status != 200:
+                                    error_text = await response.text()
+                                    logger.error(f"YouTube API error: {error_text}")
+                                    if page_attempt == 2:
+                                        break
+                                    await asyncio.sleep(2 ** page_attempt)
+                                    continue
+                                
+                                items_data = await response.json()
+                                break
+                        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                            logger.warning(f"Connection error on page attempt {page_attempt + 1}: {e}")
+                            if page_attempt == 2:
+                                break
+                            await asyncio.sleep(2 ** page_attempt)
+                    else:
+                        # All page attempts failed
                         break
                     
-                    items_data = await response.json()
+                    # Extract video IDs from this page
+                    for item in items_data.get('items', []):
+                        video_id = item.get('contentDetails', {}).get('videoId')
+                        if video_id:
+                            all_video_ids.append(video_id)
+                    
+                    # Check if there are more pages
+                    next_page_token = items_data.get('nextPageToken')
+                    if not next_page_token:
+                        break
                 
-                # Extract video IDs from this page
-                for item in items_data.get('items', []):
-                    video_id = item.get('contentDetails', {}).get('videoId')
-                    if video_id:
-                        all_video_ids.append(video_id)
+                # Create playlist object
+                playlist_obj = {
+                    'title': playlist_title,
+                    'source': playlist_id
+                }
                 
-                # Check if there are more pages
-                next_page_token = items_data.get('nextPageToken')
-                if not next_page_token:
-                    break
-            
-            # Create playlist object
-            playlist_obj = {
-                'title': playlist_title,
-                'source': playlist_id
-            }
-            
-            # Process videos in batches of 50 (YouTube API limit)
-            results = []
-            
-            # Process in batches to avoid API quota issues
-            for i in range(0, len(all_video_ids), 50):
-                batch = all_video_ids[i:i+50]
-                batch_videos = await get_videos_details(batch, api_key)
+                # Process videos in batches of 50 (YouTube API limit)
+                results = []
                 
-                for video in batch_videos:
-                    if video:
-                        # Process chapters if needed
-                        if should_split_chapters:
-                            chapters = await process_video_chapters(
-                                video, 
-                                api_key, 
-                                playlist_obj
-                            )
-                            if chapters:
-                                results.extend(chapters)
-                                continue
-                        
-                        # Add as single video
-                        metadata = format_video_metadata(video, playlist_obj)
-                        results.append(metadata)
+                # Process in batches to avoid API quota issues
+                for i in range(0, len(all_video_ids), 50):
+                    batch = all_video_ids[i:i+50]
+                    batch_videos = await get_videos_details(batch, api_key)
+                    
+                    for video in batch_videos:
+                        if video:
+                            # Process chapters if needed
+                            if should_split_chapters:
+                                chapters = await process_video_chapters(
+                                    video, 
+                                    api_key, 
+                                    playlist_obj
+                                )
+                                if chapters:
+                                    results.extend(chapters)
+                                    continue
+                            
+                            # Add as single video
+                            metadata = format_video_metadata(video, playlist_obj)
+                            results.append(metadata)
+                
+                # Cache the result - using short TTL as playlists change frequently
+                await key_value_cache.set(
+                    cache_key,
+                    json.dumps(results),
+                    ONE_HOUR_IN_SECONDS
+                )
+                
+                return results
+                
+        except asyncio.TimeoutError:
+            logger.warning(f"YouTube playlist API timeout on attempt {attempt + 1}")
+            if attempt == max_retries - 1:
+                return []
+            await asyncio.sleep(2 ** attempt)
             
-            # Cache the result - using short TTL as playlists change frequently
-            await key_value_cache.set(
-                cache_key,
-                json.dumps(results),
-                ONE_HOUR_IN_SECONDS
-            )
+        except aiohttp.ClientError as e:
+            logger.warning(f"YouTube playlist API connection error on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                return []
+            await asyncio.sleep(2 ** attempt)
             
-            return results
-            
-    except Exception as e:
-        logger.error(f"Error getting YouTube playlist: {str(e)}")
-        return []
+        except Exception as e:
+            logger.error(f"Error getting YouTube playlist: {str(e)}")
+            if attempt == max_retries - 1:
+                return []
+            await asyncio.sleep(2 ** attempt)
+    
+    return []
 
 async def get_video_details(video_id: str, api_key: str) -> Optional[Dict[str, Any]]:
-    """Get detailed information about a YouTube video"""
+    """Get detailed information about a YouTube video with retry logic"""
     # Try to get from cache with 1 hour TTL
     cache_key = f"youtube_video_details:{video_id}"
     cached = await key_value_cache.get(cache_key)
     if cached:
         return json.loads(cached)
     
-    async with aiohttp.ClientSession() as session:
-        params = {
-            'part': 'snippet,contentDetails,statistics',
-            'id': video_id,
-            'key': api_key
-        }
-        
-        async with session.get(
-            'https://www.googleapis.com/youtube/v3/videos',
-            params=params
-        ) as response:
-            if response.status != 200:
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30, connect=10),
+                connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+            ) as session:
+                params = {
+                    'part': 'snippet,contentDetails,statistics',
+                    'id': video_id,
+                    'key': api_key
+                }
+                
+                async with session.get(
+                    'https://www.googleapis.com/youtube/v3/videos',
+                    params=params
+                ) as response:
+                    if response.status == 429:  # Rate limit
+                        retry_after = int(response.headers.get('Retry-After', '60'))
+                        logger.warning(f"YouTube API rate limit hit, waiting {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        continue
+                        
+                    if response.status != 200:
+                        if attempt == max_retries - 1:
+                            return None
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    
+                    data = await response.json()
+                
+                if not data.get('items'):
+                    return None
+                
+                result = data['items'][0]
+                
+                # Cache the video details
+                await key_value_cache.set(
+                    cache_key,
+                    json.dumps(result),
+                    ONE_HOUR_IN_SECONDS
+                )
+                
+                return result
+                
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            logger.warning(f"Connection error getting video details on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
                 return None
-            
-            data = await response.json()
-        
-        if not data.get('items'):
-            return None
-        
-        result = data['items'][0]
-        
-        # Cache the video details
-        await key_value_cache.set(
-            cache_key,
-            json.dumps(result),
-            ONE_HOUR_IN_SECONDS
-        )
-        
-        return result
+            await asyncio.sleep(2 ** attempt)
+        except Exception as e:
+            logger.error(f"Error getting video details: {e}")
+            if attempt == max_retries - 1:
+                return None
+            await asyncio.sleep(2 ** attempt)
+    
+    return None
 
 async def get_videos_details(video_ids: List[str], api_key: str) -> List[Dict[str, Any]]:
-    """Get detailed information about multiple YouTube videos"""
+    """Get detailed information about multiple YouTube videos with improved error handling"""
     if not video_ids:
         return []
     
@@ -403,32 +515,60 @@ async def get_videos_details(video_ids: List[str], api_key: str) -> List[Dict[st
             results.extend(json.loads(cached))
             continue
         
-        # Need to fetch this batch
-        async with aiohttp.ClientSession() as session:
-            params = {
-                'part': 'snippet,contentDetails,statistics',
-                'id': ','.join(batch),
-                'key': api_key
-            }
-            
-            async with session.get(
-                'https://www.googleapis.com/youtube/v3/videos',
-                params=params
-            ) as response:
-                if response.status != 200:
-                    continue
+        # Need to fetch this batch with retry logic
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=30, connect=10),
+                    connector=aiohttp.TCPConnector(limit=10, limit_per_host=5)
+                ) as session:
+                    params = {
+                        'part': 'snippet,contentDetails,statistics',
+                        'id': ','.join(batch),
+                        'key': api_key
+                    }
+                    
+                    async with session.get(
+                        'https://www.googleapis.com/youtube/v3/videos',
+                        params=params
+                    ) as response:
+                        if response.status == 429:  # Rate limit
+                            retry_after = int(response.headers.get('Retry-After', '60'))
+                            logger.warning(f"YouTube API rate limit hit, waiting {retry_after}s")
+                            await asyncio.sleep(retry_after)
+                            continue
+                            
+                        if response.status != 200:
+                            if attempt == max_retries - 1:
+                                break
+                            await asyncio.sleep(2 ** attempt)
+                            continue
+                        
+                        data = await response.json()
                 
-                data = await response.json()
-            
-            batch_results = data.get('items', [])
-            results.extend(batch_results)
-            
-            # Cache this batch
-            await key_value_cache.set(
-                batch_key,
-                json.dumps(batch_results),
-                ONE_HOUR_IN_SECONDS
-            )
+                batch_results = data.get('items', [])
+                results.extend(batch_results)
+                
+                # Cache this batch
+                await key_value_cache.set(
+                    batch_key,
+                    json.dumps(batch_results),
+                    ONE_HOUR_IN_SECONDS
+                )
+                break
+                
+            except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                logger.warning(f"Connection error getting batch details on attempt {attempt + 1}: {e}")
+                if attempt == max_retries - 1:
+                    break
+                await asyncio.sleep(2 ** attempt)
+            except Exception as e:
+                logger.error(f"Error getting batch details: {e}")
+                if attempt == max_retries - 1:
+                    break
+                await asyncio.sleep(2 ** attempt)
     
     return results
 
@@ -643,90 +783,128 @@ def extract_youtube_id(url: str) -> Optional[str]:
     return None
 
 async def get_youtube_suggestions(query: str) -> List[str]:
-    """Get search suggestions from YouTube for a query"""
+    """Get search suggestions from YouTube for a query with improved error handling"""
     if not query or len(query.strip()) < 2:
         return []
+    
+    max_retries = 3
             
-    try:
-        # Try to get from cache first
-        cache_key = f"youtube_suggestions:{query}"
-        cached = await key_value_cache.get(cache_key)
-        if cached:
-            return json.loads(cached)
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://suggestqueries.google.com/complete/search",
-                params={
-                    "client": "firefox",
-                    "ds": "yt",
-                    "q": query
-                },
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                }
-            ) as response:
-                if response.status != 200:
-                    return []
-                
-                # Get response as text first
-                text = await response.text()
-                
-                # Try to parse response as JSON
-                try:
-                    # Remove JavaScript callback if present
-                    if text.startswith("window.google.ac.h("):
-                        text = text[text.index("(")+1:text.rindex(")")]
+    for attempt in range(max_retries):
+        try:
+            # Try to get from cache first
+            cache_key = f"youtube_suggestions:{query}"
+            cached = await key_value_cache.get(cache_key)
+            if cached:
+                return json.loads(cached)
+            
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10, connect=5),
+                connector=aiohttp.TCPConnector(limit=5, limit_per_host=2)
+            ) as session:
+                async with session.get(
+                    "https://suggestqueries.google.com/complete/search",
+                    params={
+                        "client": "firefox",
+                        "ds": "yt",
+                        "q": query
+                    },
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    }
+                ) as response:
+                    if response.status != 200:
+                        if attempt == max_retries - 1:
+                            return []
+                        await asyncio.sleep(2 ** attempt)
+                        continue
                     
-                    data = json.loads(text)
-                    suggestions = []
-                    if isinstance(data, list) and len(data) > 1:
-                        suggestions = data[1]  # Second element contains suggestions array
+                    # Get response as text first
+                    text = await response.text()
                     
-                    # Cache the suggestions with 10 minute TTL
-                    await key_value_cache.set(
-                        cache_key,
-                        json.dumps(suggestions),
-                        TEN_MINUTES_IN_SECONDS
-                    )
-                    
-                    return suggestions
-                except json.JSONDecodeError:
-                    # Fallback: Try regex extraction
-                    import re
-                    suggestions = []
-                    matches = re.findall(r'"([^"]+)"', text)
-                    if matches and len(matches) > 1:
-                        suggestions = matches[1:]  # Skip the first match (query)
-                    
-                    # Cache the suggestions with 10 minute TTL
-                    await key_value_cache.set(
-                        cache_key,
-                        json.dumps(suggestions),
-                        TEN_MINUTES_IN_SECONDS
-                    )
-                    
-                    return suggestions
-    except Exception as e:
-        logger.error(f"Error getting YouTube suggestions: {e}")
-        return []
+                    # Try to parse response as JSON
+                    try:
+                        # Remove JavaScript callback if present
+                        if text.startswith("window.google.ac.h("):
+                            text = text[text.index("(")+1:text.rindex(")")]
+                        
+                        data = json.loads(text)
+                        suggestions = []
+                        if isinstance(data, list) and len(data) > 1:
+                            suggestions = data[1]  # Second element contains suggestions array
+                        
+                        # Cache the suggestions with 10 minute TTL
+                        await key_value_cache.set(
+                            cache_key,
+                            json.dumps(suggestions),
+                            TEN_MINUTES_IN_SECONDS
+                        )
+                        
+                        return suggestions
+                    except json.JSONDecodeError:
+                        # Fallback: Try regex extraction
+                        suggestions = []
+                        matches = re.findall(r'"([^"]+)"', text)
+                        if matches and len(matches) > 1:
+                            suggestions = matches[1:]  # Skip the first match (query)
+                        
+                        # Cache the suggestions with 10 minute TTL
+                        await key_value_cache.set(
+                            cache_key,
+                            json.dumps(suggestions),
+                            TEN_MINUTES_IN_SECONDS
+                        )
+                        
+                        return suggestions
+                        
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            logger.warning(f"Connection error getting YouTube suggestions on attempt {attempt + 1}: {e}")
+            if attempt == max_retries - 1:
+                return []
+            await asyncio.sleep(2 ** attempt)
+        except Exception as e:
+            logger.error(f"Error getting YouTube suggestions: {e}")
+            if attempt == max_retries - 1:
+                return []
+            await asyncio.sleep(2 ** attempt)
+    
+    return []
 
 async def test_youtube_api(api_key: str):
-    """Test connection to YouTube API"""
-    async with aiohttp.ClientSession() as session:
-        params = {
-            'part': 'snippet',
-            'q': 'test',
-            'maxResults': 1,
-            'key': api_key
-        }
-        
-        async with session.get(
-            'https://www.googleapis.com/youtube/v3/search',
-            params=params
-        ) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise ValueError(f"YouTube API test failed: {response.status} - {text}")
-            
-            return True
+    """Test connection to YouTube API with improved error handling"""
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30, connect=10)
+            ) as session:
+                params = {
+                    'part': 'snippet',
+                    'q': 'test',
+                    'maxResults': 1,
+                    'key': api_key
+                }
+                
+                async with session.get(
+                    'https://www.googleapis.com/youtube/v3/search',
+                    params=params
+                ) as response:
+                    if response.status != 200:
+                        text = await response.text()
+                        if attempt == max_retries - 1:
+                            raise ValueError(f"YouTube API test failed: {response.status} - {text}")
+                        await asyncio.sleep(2 ** attempt)
+                        continue
+                    
+                    return True
+                    
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            if attempt == max_retries - 1:
+                raise ValueError(f"YouTube API connection failed: {e}")
+            await asyncio.sleep(2 ** attempt)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise ValueError(f"YouTube API test failed: {e}")
+            await asyncio.sleep(2 ** attempt)
+    
+    return True

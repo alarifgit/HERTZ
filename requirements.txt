@@ -1,10 +1,40 @@
+# Core Discord library with voice support
 disnake[voice]
+
+# HTTP client with connection pooling
 aiohttp
+
+# Configuration and validation
 pydantic
 python-dotenv
+
+# Audio/Video processing
 yt-dlp
+
+# Music service integration
 spotipy
+
+# Alternative HTTP client for API calls
 httpx
+
+# Database
 sqlalchemy
 aiosqlite
+
+# System monitoring
 psutil
+
+# Additional dependencies for better stability
+certifi
+urllib3
+charset-normalizer
+idna
+
+# Async utilities
+asyncio-mqtt
+
+# Better JSON handling
+orjson
+
+# Connection retry logic
+tenacity
