@@ -3,7 +3,6 @@ import os
 import asyncio
 import logging
 import sys
-import time
 from typing import Dict, Optional, List
 
 import disnake
@@ -41,10 +40,6 @@ class HertzBot(commands.InteractionBot):
             ),
             status=getattr(disnake.Status, config.BOT_STATUS.lower())
         )
-        
-        # Health monitoring state
-        self._last_voice_check = time.time()
-        self._voice_issues_count = 0
         
         # Add a test slash command directly to verify it works
         @self.slash_command(
@@ -119,11 +114,21 @@ class HertzBot(commands.InteractionBot):
                         logger.warning("Bot is not connected, awaiting reconnect")
                         # Let the automatic reconnect handle it
                     
-                    # Enhanced voice client monitoring
-                    await self._check_voice_client_health()
+                    # Check voice connections
+                    for guild_id, player in self.player_manager.players.items():
+                        if player.voice_client and player.voice_client.is_connected():
+                            # Check if voice client is playing but status is not PLAYING
+                            if player.voice_client.is_playing() and player.status != player.Status.PLAYING:
+                                logger.warning(f"Voice client state mismatch in guild {guild_id}, fixing")
+                                player.status = player.Status.PLAYING
+                            # Check if voice client is not playing but status is PLAYING
+                            elif not player.voice_client.is_playing() and player.status == player.Status.PLAYING:
+                                logger.warning(f"Voice client state mismatch in guild {guild_id}, fixing")
+                                player.status = player.Status.IDLE
                     
                     # Update the health status file
                     with open('/data/health_status', 'w') as f:
+                        import time
                         f.write(str(int(time.time())))
                     
                     # Wait for next check
@@ -134,76 +139,6 @@ class HertzBot(commands.InteractionBot):
         
         # Start the health check task
         asyncio.create_task(health_check())
-    
-    async def _check_voice_client_health(self):
-        """Enhanced voice client health monitoring"""
-        current_time = time.time()
-        
-        for guild_id, player in self.player_manager.players.items():
-            try:
-                # Skip if no voice client
-                if not player.voice_client:
-                    continue
-                
-                guild = self.get_guild(int(guild_id))
-                guild_name = guild.name if guild else f"Unknown ({guild_id})"
-                
-                # Check for basic state mismatches
-                voice_playing = player.voice_client.is_playing()
-                voice_paused = player.voice_client.is_paused()
-                player_playing = player.status == player.Status.PLAYING
-                player_paused = player.status == player.Status.PAUSED
-                player_idle = player.status == player.Status.IDLE
-                
-                # Fix state mismatches
-                fixed_issue = False
-                
-                if voice_playing and not player_playing and not player_paused:
-                    logger.warning(f"[HEALTH] Voice client playing but player idle in {guild_name}, fixing")
-                    player.status = player.Status.PLAYING
-                    fixed_issue = True
-                    
-                elif not voice_playing and not voice_paused and player_playing:
-                    logger.warning(f"[HEALTH] Voice client stopped but player thinks it's playing in {guild_name}, fixing")
-                    player.status = player.Status.IDLE
-                    fixed_issue = True
-                    
-                elif voice_paused and player_playing:
-                    logger.warning(f"[HEALTH] Voice client paused but player thinks it's playing in {guild_name}, fixing")
-                    player.status = player.Status.PAUSED
-                    fixed_issue = True
-                
-                # Check for stuck states
-                if player.get_current() and player.status == player.Status.PLAYING:
-                    # If player thinks it's playing but voice client isn't doing anything
-                    if not voice_playing and not voice_paused:
-                        logger.warning(f"[HEALTH] Player stuck in playing state in {guild_name}, attempting recovery")
-                        try:
-                            await player.play()
-                            fixed_issue = True
-                        except Exception as e:
-                            logger.error(f"[HEALTH] Failed to recover player in {guild_name}: {e}")
-                
-                # Check for disconnected but still thinking connected
-                if not player.voice_client.is_connected():
-                    logger.warning(f"[HEALTH] Voice client disconnected but player thinks it's connected in {guild_name}")
-                    await player.disconnect()
-                    fixed_issue = True
-                
-                # Track consecutive issues
-                if fixed_issue:
-                    self._voice_issues_count += 1
-                    if self._voice_issues_count > 10:
-                        logger.error(f"[HEALTH] Too many voice issues ({self._voice_issues_count}), this may indicate a serious problem")
-                else:
-                    # Reset count if no issues found
-                    if current_time - self._last_voice_check > 300:  # 5 minutes
-                        self._voice_issues_count = 0
-                
-            except Exception as e:
-                logger.error(f"[HEALTH] Error checking voice health for guild {guild_id}: {e}")
-        
-        self._last_voice_check = current_time
     
     async def load_cogs(self) -> None:
         """Load all cogs"""
@@ -259,37 +194,6 @@ class HertzBot(commands.InteractionBot):
         
         logger.info(f"Invite URL: https://discord.com/oauth2/authorize?client_id={self.user.id}&scope=bot%20applications.commands&permissions=277062449216")
     
-    async def on_voice_state_update(self, member: disnake.Member, before: disnake.VoiceState, after: disnake.VoiceState):
-        """Handle voice state updates to manage auto-disconnect"""
-        # Only care about other members leaving/joining channels where we're connected
-        if member.bot:
-            return
-            
-        player = self.player_manager.get_player(member.guild.id)
-        if not player.voice_client:
-            return
-            
-        # Get the channel we're connected to
-        bot_channel = player.voice_client.channel
-        if not bot_channel:
-            return
-        
-        # Check if someone left our channel
-        if before.channel == bot_channel and after.channel != bot_channel:
-            logger.debug(f"[VOICE] Member {member.display_name} left voice channel {bot_channel.name}")
-            
-            # Check if we should leave due to empty channel
-            from .db.client import get_guild_settings
-            settings = await get_guild_settings(str(member.guild.id))
-            
-            if settings.leaveIfNoListeners:
-                # Count non-bot members in the channel
-                non_bot_members = [m for m in bot_channel.members if not m.bot]
-                
-                if len(non_bot_members) == 0:
-                    logger.info(f"[VOICE] No listeners left in {bot_channel.name}, disconnecting")
-                    await player.disconnect()
-    
     async def on_guild_join(self, guild: disnake.Guild):
         """Handle the bot joining a new guild with improved owner detection"""
         logger.info(f"Joined new guild: {guild.name} (ID: {guild.id})")
@@ -322,42 +226,42 @@ class HertzBot(commands.InteractionBot):
             
             # Prepare the welcome embeds
             owner_embed = disnake.Embed(
-                title="HERTZ Music Bot - Now Online",
+                title="📡 HERTZ Broadcasting System - Now Online",
                 description=(
-                    "**🎛️ Setup Complete**\n\n"
-                    "Thank you for adding HERTZ to your server! Your music bot is now online and ready.\n\n"
+                    "**🎛️ Studio Configuration Ready**\n\n"
+                    "Thank you for adding HERTZ to your server! Your audio transmission station is now online and ready for operation.\n\n"
                     "**Quick Start Guide:**\n"
-                    "• Use `/play` to start playing music\n"
-                    "• Use `/health` to see bot diagnostics\n"
-                    "• Administrators can use `/config` to adjust settings\n\n"
+                    "• Use `/play` to begin audio transmission\n"
+                    "• Use `/help` to see all available controls\n"
+                    "• Administrators can use `/config` to adjust broadcast parameters\n\n"
                     "By default, all server members can control HERTZ in all channels. "
-                    "For better control, consider configuring channel-specific permissions."
+                    "For professional operation, consider configuring channel-specific permissions."
                 ),
                 color=disnake.Color.blue()
             )
             
             owner_embed.add_field(
-                name="🎵 Getting Started",
-                value="Join a voice channel and use `/play` to start your first song!",
+                name="📻 Signal Setup",
+                value="Join a voice channel and use `/play` to start your first transmission!",
                 inline=False
             )
             
             owner_embed.add_field(
-                name="🔧 Support",
-                value="If you need help, visit our support server or documentation.",
+                name="🔧 Technical Support",
+                value="If you experience signal interference, visit our support server or documentation.",
                 inline=False
             )
             
-            owner_embed.set_footer(text="HERTZ Music Bot - Professional Discord Audio")
+            owner_embed.set_footer(text="HERTZ Audio Solutions - Professional Broadcasting for Discord")
             
             channel_embed = disnake.Embed(
-                title="HERTZ Music Bot - Now Online",
+                title="📡 HERTZ Broadcasting System - Now Online",
                 description=(
-                    "**🎛️ Music Bot Ready**\n\n"
-                    "Thanks for adding HERTZ to your server! Your music bot is now online.\n\n"
-                    "• Use `/play` to start playing music\n"
+                    "**🎛️ Audio Transmission Station Ready**\n\n"
+                    "Thanks for adding HERTZ to your server! Your music broadcasting system is now online.\n\n"
+                    "• Use `/play` to start transmitting music\n"
                     "• Administrators can use `/config` to adjust settings\n\n"
-                    "Join a voice channel to begin!"
+                    "Join a voice channel to begin broadcasting!"
                 ),
                 color=disnake.Color.blue()
             )
@@ -392,21 +296,43 @@ class HertzBot(commands.InteractionBot):
             import traceback
             logger.error(traceback.format_exc())
     
-    async def on_error(self, event, *args, **kwargs):
-        """Handle errors more gracefully"""
-        logger.error(f"Error in event {event}: {args}, {kwargs}")
-        import traceback
-        logger.error(traceback.format_exc())
-    
-    async def on_application_command_error(self, inter: disnake.ApplicationCommandInteraction, error: Exception):
-        """Handle application command errors gracefully"""
-        logger.error(f"Command error in {inter.application_command.name}: {error}")
+    async def on_voice_state_update(self, member: disnake.Member, before: disnake.VoiceState, after: disnake.VoiceState):
+        """Handle voice state updates with improved error handling"""
+        # Skip bot updates
+        if member.bot:
+            return
         
-        # Try to respond to the interaction if we haven't already
         try:
-            if not inter.response.is_done():
-                await inter.response.send_message(f"❌ An error occurred: {str(error)}", ephemeral=True)
-            else:
-                await inter.followup.send(f"❌ An error occurred: {str(error)}", ephemeral=True)
+            # Handle disconnections
+            if before.channel and (not after.channel or before.channel.id != after.channel.id):
+                player = self.player_manager.get_player(member.guild.id)
+                
+                if not player.voice_client:
+                    return
+                    
+                if player.voice_client.channel.id == before.channel.id:
+                    # Check if any non-bot users remain
+                    non_bot_count = sum(1 for m in before.channel.members if not m.bot)
+                    
+                    if non_bot_count == 0:
+                        from .db.client import get_guild_settings
+                        settings = await get_guild_settings(str(member.guild.id))
+                        
+                        if settings.leaveIfNoListeners:
+                            logger.info(f"All users left voice channel in {member.guild.name}, disconnecting")
+                            await player.disconnect()
+                
+            # Handle reconnection attempts for moved channels
+            if after.channel and member.id == self.user.id:
+                player = self.player_manager.get_player(member.guild.id)
+                
+                if player.voice_client and player.voice_client.channel.id != after.channel.id:
+                    logger.info(f"Bot was moved to a new channel in {member.guild.name}, reconnecting")
+                    await player.connect(after.channel)
+                    if player.status in [player.Status.PLAYING, player.Status.PAUSED]:
+                        await player.play()
+                        
         except Exception as e:
-            logger.error(f"Failed to send error message: {e}")
+            logger.error(f"Error in voice state update handler: {e}")
+            import traceback
+            logger.error(traceback.format_exc())

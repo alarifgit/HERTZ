@@ -38,8 +38,8 @@ class ConfigCommands(commands.Cog):
         
         # Create embed with settings
         embed = disnake.Embed(
-            title="Bot Configuration",
-            description="Current server settings",
+            title="📡 HERTZ Control Panel",
+            description="Current broadcast configuration parameters",
             color=disnake.Color.blue()
         )
         
@@ -89,7 +89,7 @@ class ConfigCommands(commands.Cog):
         settings.playlistLimit = limit
         await settings.save()
         
-        await inter.followup.send("✅ Playlist limit updated")
+        await inter.followup.send("📊 Signal calibrated: playlist limit updated")
     
     @config_group.sub_command(
         name="set-wait-after-queue-empties",
@@ -113,7 +113,7 @@ class ConfigCommands(commands.Cog):
         settings.secondsToWaitAfterQueueEmpties = delay
         await settings.save()
         
-        await inter.followup.send("✅ Auto-disconnect delay updated")
+        await inter.followup.send("⏱️ Timing protocol updated: automatic disconnect delay configured")
     
     @config_group.sub_command(
         name="set-leave-if-no-listeners",
@@ -136,7 +136,7 @@ class ConfigCommands(commands.Cog):
         settings.leaveIfNoListeners = value
         await settings.save()
         
-        await inter.followup.send("✅ Empty channel behavior updated")
+        await inter.followup.send("🔌 Auto-disconnect protocol updated: empty channel behavior configured")
     
     @config_group.sub_command(
         name="set-queue-add-response-hidden",
@@ -159,7 +159,7 @@ class ConfigCommands(commands.Cog):
         settings.queueAddResponseEphemeral = value
         await settings.save()
         
-        await inter.followup.send("✅ Queue response visibility updated")
+        await inter.followup.send("📲 Notification protocol updated: queue addition visibility configured")
     
     @config_group.sub_command(
         name="set-auto-announce-next-song",
@@ -182,7 +182,7 @@ class ConfigCommands(commands.Cog):
         settings.autoAnnounceNextSong = value
         await settings.save()
         
-        await inter.followup.send("✅ Auto-announce setting updated")
+        await inter.followup.send("📣 Broadcast protocol updated: auto-announce setting configured")
     
     @config_group.sub_command(
         name="set-default-volume",
@@ -207,7 +207,7 @@ class ConfigCommands(commands.Cog):
         settings.defaultVolume = level
         await settings.save()
         
-        await inter.followup.send(f"✅ Default volume set to {level}%")
+        await inter.followup.send(f"🔊 Audio gain calibrated: default volume set to {level}%")
     
     @config_group.sub_command(
         name="set-default-queue-page-size",
@@ -232,7 +232,7 @@ class ConfigCommands(commands.Cog):
         settings.defaultQueuePageSize = page_size
         await settings.save()
         
-        await inter.followup.send("✅ Queue page size updated")
+        await inter.followup.send("📋 Display parameters updated: queue page size configured")
     
     @config_group.sub_command(
         name="set-reduce-vol-when-voice",
@@ -255,7 +255,7 @@ class ConfigCommands(commands.Cog):
         settings.turnDownVolumeWhenPeopleSpeak = value
         await settings.save()
         
-        await inter.followup.send("✅ Voice reduction setting updated")
+        await inter.followup.send("🎤 Voice priority protocol updated: volume reduction during speech configured")
     
     @config_group.sub_command(
         name="set-reduce-vol-when-voice-target",
@@ -280,4 +280,4 @@ class ConfigCommands(commands.Cog):
         settings.turnDownVolumeWhenPeopleSpeakTarget = volume
         await settings.save()
         
-        await inter.followup.send(f"✅ Voice reduction target set to {volume}%")
+        await inter.followup.send(f"🎚️ Voice priority threshold calibrated: speech volume set to {volume}%")

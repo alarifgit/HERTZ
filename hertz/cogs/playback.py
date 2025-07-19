@@ -37,12 +37,9 @@ class PlaybackCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} paused playback")
             await player.pause()
-            await inter.followup.send("⏸️ Paused")
+            await inter.followup.send(Responses.PAUSED)
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Pause command error: {e}")
-            await inter.followup.send(error_msg("Failed to pause playback"))
     
     @commands.slash_command(
         name="resume",
@@ -66,20 +63,18 @@ class PlaybackCommands(commands.Cog):
             
             # If paused or has a current song, resume playback
             if player.status == player.Status.PAUSED or player.get_current():
+                # If we have a current song, try to resume from the tracked position
                 logger.info(f"[COMMAND] {inter.author.display_name} resumed playback")
                 await player.play()
                 
                 await inter.followup.send(
-                    content="▶️ Resumed",
+                    content=Responses.RESUMED,
                     embed=create_playing_embed(player)
                 )
             else:
                 await inter.followup.send(error_msg("nothing to play"))
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Resume command error: {e}")
-            await inter.followup.send(error_msg("Failed to resume playback. This may be due to connection issues."))
     
     @commands.slash_command(
         name="skip",
@@ -110,16 +105,13 @@ class PlaybackCommands(commands.Cog):
             
             if player.get_current():
                 await inter.followup.send(
-                    content="⏭️ Skipped",
+                    content=Responses.SKIPPED,
                     embed=create_playing_embed(player)
                 )
             else:
                 await inter.followup.send("📻 Reached the end of the queue")
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Skip command error: {e}")
-            await inter.followup.send(error_msg("Failed to skip track"))
     
     @commands.slash_command(
         name="next",
@@ -149,14 +141,11 @@ class PlaybackCommands(commands.Cog):
             logger.info(f"[COMMAND] {inter.author.display_name} went back to previous track")
             await player.back()
             await inter.followup.send(
-                content="⏮️ Previous track",
+                content=Responses.PREVIOUS,
                 embed=create_playing_embed(player)
             )
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Unskip command error: {e}")
-            await inter.followup.send(error_msg("Failed to go back to previous track"))
     
     @commands.slash_command(
         name="seek",
@@ -203,13 +192,10 @@ class PlaybackCommands(commands.Cog):
             
             logger.info(f"[COMMAND] {inter.author.display_name} seeked to {seek_time}s")
             await player.seek(seek_time)
-            await inter.followup.send(f"⏩ Seeked to {pretty_time(player.get_position())}")
+            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
             
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Seek command error: {e}")
-            await inter.followup.send(error_msg("Failed to seek. This may be due to connection issues with the audio stream."))
     
     @commands.slash_command(
         name="fseek",
@@ -255,13 +241,10 @@ class PlaybackCommands(commands.Cog):
             
             logger.info(f"[COMMAND] {inter.author.display_name} forward seeked by {forward_time}s")
             await player.forward_seek(forward_time)
-            await inter.followup.send(f"⏩ Seeked to {pretty_time(player.get_position())}")
+            await inter.followup.send(Responses.SEEKED.format(pretty_time(player.get_position())))
             
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Forward seek command error: {e}")
-            await inter.followup.send(error_msg("Failed to seek forward. This may be due to connection issues with the audio stream."))
     
     @commands.slash_command(
         name="replay",
@@ -290,12 +273,9 @@ class PlaybackCommands(commands.Cog):
         try:
             logger.info(f"[COMMAND] {inter.author.display_name} restarted current track")
             await player.seek(0)
-            await inter.followup.send("🔄 Track restarted")
+            await inter.followup.send(Responses.REPLAYED)
         except ValueError as e:
             await inter.followup.send(error_msg(str(e)))
-        except Exception as e:
-            logger.error(f"[ERROR] Replay command error: {e}")
-            await inter.followup.send(error_msg("Failed to restart track. This may be due to connection issues with the audio stream."))
     
     @commands.slash_command(
         name="loop",
@@ -325,7 +305,7 @@ class PlaybackCommands(commands.Cog):
         
         logger.info(f"[COMMAND] {inter.author.display_name} {'enabled' if player.loop_current_song else 'disabled'} track loop")
         await inter.followup.send(
-            "🔁 Track loop enabled" if player.loop_current_song else "⏹️ Track loop disabled"
+            Responses.LOOPING if player.loop_current_song else Responses.LOOP_STOPPED
         )
     
     @commands.slash_command(
@@ -355,13 +335,9 @@ class PlaybackCommands(commands.Cog):
             await inter.followup.send(error_msg("nothing is playing"))
             return
         
-        try:
-            logger.info(f"[COMMAND] {inter.author.display_name} set volume to {level}%")
-            player.set_volume(level)
-            await inter.followup.send(f"🔊 Volume set to {level}%")
-        except Exception as e:
-            logger.error(f"[ERROR] Volume command error: {e}")
-            await inter.followup.send(error_msg("Failed to set volume"))
+        logger.info(f"[COMMAND] {inter.author.display_name} set volume to {level}%")
+        player.set_volume(level)
+        await inter.followup.send(Responses.VOLUME_SET.format(level))
     
     @commands.slash_command(
         name="disconnect",
@@ -382,13 +358,9 @@ class PlaybackCommands(commands.Cog):
             await inter.followup.send(error_msg("not connected"))
             return
         
-        try:
-            logger.info(f"[COMMAND] {inter.author.display_name} disconnected bot from voice")
-            await player.disconnect()
-            await inter.followup.send("🔌 Disconnected")
-        except Exception as e:
-            logger.error(f"[ERROR] Disconnect command error: {e}")
-            await inter.followup.send("🔌 Disconnected (with errors)")
+        logger.info(f"[COMMAND] {inter.author.display_name} disconnected bot from voice")
+        await player.disconnect()
+        await inter.followup.send(Responses.DISCONNECTED)
     
     @commands.slash_command(
         name="stop",
@@ -413,17 +385,6 @@ class PlaybackCommands(commands.Cog):
             await inter.followup.send(error_msg("not currently playing"))
             return
         
-        try:
-            logger.info(f"[COMMAND] {inter.author.display_name} stopped playback and cleared queue")
-            await player.stop()
-            await inter.followup.send("⏹️ Stopped")
-        except Exception as e:
-            logger.error(f"[ERROR] Stop command error: {e}")
-            # Force cleanup even if stop failed
-            try:
-                await player.disconnect()
-                player.queue = []
-                player.queue_position = 0
-            except Exception:
-                pass
-            await inter.followup.send("⏹️ Stopped (with errors)")
+        logger.info(f"[COMMAND] {inter.author.display_name} stopped playback and cleared queue")
+        await player.stop()
+        await inter.followup.send(Responses.STOPPED)
