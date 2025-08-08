@@ -70,8 +70,7 @@ class Utils(commands.Cog):
             "`/skip` - Skip the current song",
             "`/pause` - Pause playback",
             "`/resume` - Resume playback",
-            "`/stop` - Stop playback and clear queue",
-            "`/disconnect` - Disconnect from voice"
+            "`/stop` - Stop playback and clear queue"
         ]
         embed.add_field(
             name="🎵 Music",
@@ -99,7 +98,8 @@ class Utils(commands.Cog):
         control_cmds = [
             "`/volume` - Set volume",
             "`/seek` - Seek to position",
-            "`/bassboost` - Toggle bass boost"
+            "`/bassboost` - Toggle bass boost",
+            "`/disconnect` - Disconnect from voice"
         ]
         embed.add_field(
             name="🎛️ Controls",

@@ -1,65 +1,71 @@
 """
-Music Cog - Core playback functionality using yt-dlp
+Music Cog - Main music functionality for Hertz
 """
 import discord
 from discord.ext import commands
 from discord import app_commands
 import asyncio
 import yt_dlp
-import logging
-from typing import Optional, List, Dict, Any
 import re
-from datetime import datetime, timezone
+import logging
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+from datetime import datetime, timezone
+from typing import List, Dict, Optional
 import os
 
 logger = logging.getLogger('hertz.music')
 
-# YT-DLP options optimized for Discord playback
+# yt-dlp options
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
-    'logtostderr': False,
-    'ignoreerrors': False,
-    'default_search': 'ytsearch',
+    'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'extract_flat': 'in_playlist',
-    'age_limit': None,
-    'cookiefile': None,  # Add cookie file path if needed
-    'nocheckcertificate': True
+    'extractaudio': True,
+    'audioformat': 'best',
+    'audioquality': '320K',
 }
 
+# FFmpeg options
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+    'options': '-vn -filter:a "volume=0.5"'
 }
 
+
 class SpotifyHandler:
-    """Handle Spotify URL parsing and track search"""
+    """Handle Spotify URL processing"""
     
     def __init__(self):
         client_id = os.getenv('SPOTIFY_CLIENT_ID')
         client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
         
-        if client_id and client_secret:
-            auth_manager = SpotifyClientCredentials(
-                client_id=client_id,
-                client_secret=client_secret
-            )
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
-            self.enabled = True
+        self.enabled = bool(client_id and client_secret)
+        self.sp = None
+        
+        if self.enabled:
+            try:
+                credentials = SpotifyClientCredentials(
+                    client_id=client_id,
+                    client_secret=client_secret
+                )
+                self.sp = spotipy.Spotify(client_credentials_manager=credentials)
+                logger.info("✅ Spotify integration enabled")
+            except Exception as e:
+                logger.warning(f"⚠️ Spotify setup failed: {e}")
+                self.enabled = False
         else:
-            self.sp = None
-            self.enabled = False
-            logger.warning("⚠️ Spotify credentials not configured")
+            logger.info("ℹ️ Spotify credentials not found - Spotify integration disabled")
     
-    def is_spotify_url(self, url: str) -> bool:
-        """Check if URL is a Spotify link"""
-        return 'spotify.com' in url or 'spotify:' in url
-    
-    def extract_spotify_id(self, url: str) -> tuple[str, str]:
+    def extract_spotify_id(self, url: str) -> tuple:
         """Extract Spotify ID and type from URL"""
         patterns = {
             'track': r'spotify(?:\.com)?[:/]track[:/]([a-zA-Z0-9]+)',
@@ -126,7 +132,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.thumbnail = data.get('thumbnail')
         self.artist = data.get('artist', 'Unknown Artist')
         self.requester = data.get('requester')
-        self.added_at = datetime.now(datetime.UTC)
+        self.added_at = datetime.now(timezone.utc)
     
     @classmethod
     async def from_url(cls, url: str, *, loop=None, stream=True, requester=None):
@@ -190,11 +196,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
 class GuildMusicPlayer:
     """Music player for a specific guild"""
     
-    def __init__(self, ctx):
-        self.bot = ctx.bot
-        self.guild = ctx.guild
-        self.channel = ctx.channel
-        self.cog = ctx.cog
+    def __init__(self, interaction):
+        self.bot = interaction.client
+        self.guild = interaction.guild
+        self.channel = interaction.channel
+        self.cog = interaction.client.get_cog('Music')
         
         self.queue = asyncio.Queue()
         self.next = asyncio.Event()
@@ -326,13 +332,13 @@ class Music(commands.Cog):
         self.search_cache = {}
         self.cache_ttl = 3600  # 1 hour
     
-    def get_player(self, ctx) -> GuildMusicPlayer:
+    def get_player(self, interaction) -> GuildMusicPlayer:
         """Get or create player for guild"""
         try:
-            player = self.players[ctx.guild.id]
+            player = self.players[interaction.guild.id]
         except KeyError:
-            player = GuildMusicPlayer(ctx)
-            self.players[ctx.guild.id] = player
+            player = GuildMusicPlayer(interaction)
+            self.players[interaction.guild.id] = player
         
         return player
     
@@ -342,7 +348,7 @@ class Music(commands.Cog):
         cache_key = f"{query}:{limit}"
         if cache_key in self.search_cache:
             cached_time, results = self.search_cache[cache_key]
-            if (datetime.now(datetime.UTC) - cached_time).seconds < self.cache_ttl:
+            if (datetime.now(timezone.utc) - cached_time).seconds < self.cache_ttl:
                 return results
         
         # Search YouTube
@@ -367,7 +373,7 @@ class Music(commands.Cog):
                 })
         
         # Cache results
-        self.search_cache[cache_key] = (datetime.now(datetime.UTC), results)
+        self.search_cache[cache_key] = (datetime.now(timezone.utc), results)
         
         return results
     
@@ -385,118 +391,118 @@ class Music(commands.Cog):
                 description="You need to be in a voice channel to use this command!",
                 color=0xff0000
             )
-            await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         # Get or create player
-        ctx = await self.bot.get_context(interaction)
-        ctx.voice_client = interaction.guild.voice_client
-        player = self.get_player(ctx)
+        player = self.get_player(interaction)
         
-        # Connect to voice if not connected
-        if not ctx.voice_client:
-            channel = interaction.user.voice.channel
+        # Connect to voice channel if not connected
+        if not interaction.guild.voice_client:
             try:
-                ctx.voice_client = await channel.connect()
-                player.voice_client = ctx.voice_client
-                logger.info(f"🔊 Connected to voice channel: {channel.name}")
+                voice_client = await interaction.user.voice.channel.connect()
+                player.voice_client = voice_client
+                logger.info(f"🔗 Connected to {interaction.user.voice.channel.name}")
             except Exception as e:
-                logger.error(f"Failed to connect to voice: {e}")
                 embed = discord.Embed(
                     title="❌ Connection Failed",
-                    description=f"Could not connect to voice channel: {e}",
+                    description=f"Failed to connect to voice channel: {e}",
                     color=0xff0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
+        else:
+            player.voice_client = interaction.guild.voice_client
         
         # Handle Spotify URLs
-        tracks_to_add = []
-        
-        if self.spotify.is_spotify_url(query):
+        if 'spotify.com' in query:
             if not self.spotify.enabled:
                 embed = discord.Embed(
-                    title="❌ Spotify Not Configured",
-                    description="Spotify support is not enabled. Please configure Spotify credentials.",
+                    title="❌ Spotify Not Available",
+                    description="Spotify integration is not configured!",
                     color=0xff0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
-            # Get track queries from Spotify
-            queries = await self.spotify.get_tracks(query)
-            if not queries:
+            # Get tracks from Spotify
+            tracks = await self.spotify.get_tracks(query)
+            if not tracks:
                 embed = discord.Embed(
-                    title="❌ Invalid Spotify URL",
-                    description="Could not extract tracks from the Spotify URL.",
+                    title="❌ No Tracks Found",
+                    description="No tracks found from Spotify URL!",
                     color=0xff0000
                 )
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
-            # Search for each track on YouTube
-            embed = discord.Embed(
-                title="🎵 Processing Spotify Playlist",
-                description=f"Searching for {len(queries)} tracks on YouTube...",
-                color=0x1db954
-            )
-            msg = await interaction.followup.send(embed=embed)
-            
-            for i, search_query in enumerate(queries):
-                track = await YTDLSource.search(
-                    search_query,
+            # Add tracks to queue
+            added_count = 0
+            for track_query in tracks[:50]:  # Limit to 50 tracks
+                source_data = await YTDLSource.search(
+                    track_query,
                     loop=self.bot.loop,
                     requester=interaction.user
                 )
-                if track:
-                    tracks_to_add.append(track)
-                
-                # Update progress every 5 tracks
-                if (i + 1) % 5 == 0:
-                    embed.description = f"Found {len(tracks_to_add)}/{i+1} tracks..."
-                    await msg.edit(embed=embed)
-        else:
-            # Regular YouTube search or URL
-            track = await YTDLSource.search(
+                if source_data:
+                    await player.queue.put(source_data)
+                    added_count += 1
+            
+            embed = discord.Embed(
+                title="✅ Spotify Playlist Added",
+                description=f"Added {added_count} tracks to the queue!",
+                color=0x00ff00
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        # Handle regular search/URL
+        try:
+            source_data = await YTDLSource.search(
                 query,
                 loop=self.bot.loop,
                 requester=interaction.user
             )
-            if track:
-                tracks_to_add.append(track)
-        
-        # Add tracks to queue
-        if not tracks_to_add:
+            
+            if not source_data:
+                embed = discord.Embed(
+                    title="❌ No Results",
+                    description="No results found for your search!",
+                    color=0xff0000
+                )
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            
+            # Add to queue
+            await player.queue.put(source_data)
+            
             embed = discord.Embed(
-                title="❌ No Results",
-                description="Could not find any tracks for your query.",
+                title="✅ Track Added",
+                description=f"**[{source_data['title']}]({source_data['webpage_url']})**",
+                color=0x00ff00
+            )
+            
+            if source_data.get('thumbnail'):
+                embed.set_thumbnail(url=source_data['thumbnail'])
+            
+            if source_data.get('duration'):
+                duration = f"{source_data['duration'] // 60}:{source_data['duration'] % 60:02d}"
+                embed.add_field(name="Duration", value=duration, inline=True)
+            
+            queue_size = player.queue.qsize()
+            if queue_size > 1:
+                embed.add_field(name="Position in Queue", value=str(queue_size), inline=True)
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            logger.error(f"Play command error: {e}")
+            embed = discord.Embed(
+                title="❌ Playback Error",
+                description="An error occurred while trying to play this track!",
                 color=0xff0000
             )
-            await interaction.followup.send(embed=embed)
-            return
-        
-        # Add to queue
-        for track in tracks_to_add:
-            await player.queue.put(track)
-        
-        # Send confirmation
-        if len(tracks_to_add) == 1:
-            track = tracks_to_add[0]
-            embed = discord.Embed(
-                title="✅ Added to Queue",
-                description=f"**[{track.get('title', 'Unknown')}]({track.get('webpage_url', '')})**",
-                color=0x00ff00
-            )
-            if track.get('thumbnail'):
-                embed.set_thumbnail(url=track['thumbnail'])
-        else:
-            embed = discord.Embed(
-                title="✅ Added to Queue",
-                description=f"Added **{len(tracks_to_add)}** tracks to the queue!",
-                color=0x00ff00
-            )
-        
-        await interaction.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed, ephemeral=True)
     
     @play.autocomplete('query')
     async def play_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice]:
@@ -572,7 +578,7 @@ class Music(commands.Cog):
         embed = discord.Embed(
             title="⏸️ Paused",
             description="Playback has been paused!",
-            color=0xffff00
+            color=0x00ff00
         )
         await interaction.response.send_message(embed=embed)
     
@@ -583,8 +589,8 @@ class Music(commands.Cog):
         
         if not vc:
             embed = discord.Embed(
-                title="❌ Not Connected",
-                description="Bot is not connected to a voice channel!",
+                title="❌ Not Playing",
+                description="Nothing is currently playing!",
                 color=0xff0000
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -609,50 +615,37 @@ class Music(commands.Cog):
     
     @app_commands.command(name="stop", description="Stop playback and clear queue")
     async def stop(self, interaction: discord.Interaction):
-        """Stop playback and disconnect"""
-        if interaction.guild.id in self.players:
-            player = self.players[interaction.guild.id]
-            
-            # Clear queue
-            while not player.queue.empty():
-                try:
-                    player.queue.get_nowait()
-                except:
-                    break
-            
-            # Stop current track
-            if interaction.guild.voice_client:
-                interaction.guild.voice_client.stop()
-                await interaction.guild.voice_client.disconnect()
-            
-            # Destroy player
-            player.destroy()
-            del self.players[interaction.guild.id]
-            
-            embed = discord.Embed(
-                title="⏹️ Stopped",
-                description="Playback stopped and queue cleared!",
-                color=0x00ff00
-            )
-            await interaction.response.send_message(embed=embed)
-        else:
+        """Stop playback and clear queue"""
+        player = self.players.get(interaction.guild.id)
+        
+        if not player or not interaction.guild.voice_client:
             embed = discord.Embed(
                 title="❌ Not Playing",
                 description="Nothing is currently playing!",
                 color=0xff0000
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Clear queue
+        while not player.queue.empty():
+            try:
+                player.queue.get_nowait()
+            except:
+                break
+        
+        # Stop playback
+        interaction.guild.voice_client.stop()
+        
+        embed = discord.Embed(
+            title="⏹️ Stopped",
+            description="Playback stopped and queue cleared!",
+            color=0x00ff00
+        )
+        await interaction.response.send_message(embed=embed)
     
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        """Clean up player when bot disconnects"""
-        if member == self.bot.user and before.channel and not after.channel:
-            # Bot disconnected from voice
-            if member.guild.id in self.players:
-                player = self.players[member.guild.id]
-                player.destroy()
-                del self.players[member.guild.id]
-                logger.info(f"🧹 Cleaned up player for guild {member.guild.name}")
+# disconnect command moved to playback cog to avoid conflicts
+
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
