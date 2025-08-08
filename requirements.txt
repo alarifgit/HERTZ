@@ -1,0 +1,20 @@
+# Core Discord library with voice support
+discord.py[voice]>=2.3.2
+
+# YouTube downloading and extraction
+yt-dlp>=2024.1.0
+
+# Spotify integration
+spotipy>=2.23.0
+
+# Async HTTP requests
+aiohttp>=3.9.1
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Colored logging
+colorlog>=6.8.0
+
+# Optional: For better performance
+uvloop>=0.19.0; sys_platform != 'win32'
