@@ -7,7 +7,7 @@ from discord import app_commands
 import logging
 import platform
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger('hertz.utils')
@@ -143,7 +143,7 @@ class Utils(commands.Cog):
         """Display bot statistics"""
         
         # Calculate uptime
-        uptime = datetime.utcnow() - self.bot.start_time
+        uptime = datetime.now(datetime.UTC) - self.bot.start_time
         hours, remainder = divmod(int(uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
         days, hours = divmod(hours, 24)

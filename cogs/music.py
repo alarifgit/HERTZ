@@ -9,7 +9,7 @@ import yt_dlp
 import logging
 from typing import Optional, List, Dict, Any
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
@@ -126,7 +126,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.thumbnail = data.get('thumbnail')
         self.artist = data.get('artist', 'Unknown Artist')
         self.requester = data.get('requester')
-        self.added_at = datetime.utcnow()
+        self.added_at = datetime.now(datetime.UTC)
     
     @classmethod
     async def from_url(cls, url: str, *, loop=None, stream=True, requester=None):
@@ -342,7 +342,7 @@ class Music(commands.Cog):
         cache_key = f"{query}:{limit}"
         if cache_key in self.search_cache:
             cached_time, results = self.search_cache[cache_key]
-            if (datetime.utcnow() - cached_time).seconds < self.cache_ttl:
+            if (datetime.now(datetime.UTC) - cached_time).seconds < self.cache_ttl:
                 return results
         
         # Search YouTube
@@ -367,7 +367,7 @@ class Music(commands.Cog):
                 })
         
         # Cache results
-        self.search_cache[cache_key] = (datetime.utcnow(), results)
+        self.search_cache[cache_key] = (datetime.now(datetime.UTC), results)
         
         return results
     

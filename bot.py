@@ -9,7 +9,7 @@ import logging
 import os
 import sys
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import colorlog
 
 # Set up colored logging
@@ -53,7 +53,8 @@ class HertzBot(commands.Bot):
             )
         )
         
-        self.start_time = datetime.utcnow()
+        # Fix deprecated datetime.utcnow() usage
+        self.start_time = datetime.now(timezone.utc)
         self.version = "1.0.0"
         
     async def setup_hook(self):

@@ -8,7 +8,7 @@ import logging
 import json
 import os
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger('hertz.config')
 

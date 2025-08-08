@@ -8,7 +8,7 @@ import asyncio
 import random
 import logging
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger('hertz.queue')
 
@@ -449,7 +449,7 @@ class Queue(commands.Cog):
         embed.add_field(name="Queue Size", value=f"{queue_size} tracks", inline=True)
         
         # Time playing
-        time_playing = (datetime.utcnow() - current.added_at).seconds
+        time_playing = (datetime.now(datetime.UTC) - current.added_at).seconds
         embed.add_field(
             name="Playing For",
             value=f"{time_playing // 60}:{time_playing % 60:02d}",
